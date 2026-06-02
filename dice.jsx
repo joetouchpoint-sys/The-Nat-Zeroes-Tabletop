@@ -107,7 +107,7 @@
     const [count, setCount] = useState(1);
     const [mod, setMod] = useState(0);
     const [mode, setMode] = useState("normal");
-    const [log, setLog] = useState([]);
+    const [log, setLog] = useState(() => { try { const v = localStorage.getItem("nz_dicelog"); return v ? JSON.parse(v) : []; } catch(e) { return []; } });
     const [rolling, setRolling] = useState(false);
     const [flash, setFlash] = useState(null);
     const [showThemes, setShowThemes] = useState(false);
@@ -142,11 +142,11 @@
           label: `${mode !== "normal" && die === 20 ? (mode === "adv" ? "ADV " : "DIS ") : count + ""}d${die}${mod ? (mod > 0 ? " +" + mod : " " + mod) : ""}`,
           rolls, total, crit, who: "You", t: "just now",
         };
-        setLog((l) => [entry, ...l].slice(0, 30));
+        setLog((l) => { const next = [entry, ...l].slice(0, 30); try { localStorage.setItem("nz_dicelog", JSON.stringify(next)); } catch(e) {} return next; });
         if (crit) { setFlash(crit); setTimeout(() => setFlash(null), 1400); }
         setRolling(false);
-        // trigger 3D die animation
         setDieRolling(true);
+        if (window.NZSounds) window.NZSounds.play(crit === "nat20" ? "crit" : crit === "nat1" ? "nat1" : "dice");
         window.dispatchEvent(new CustomEvent("nz:dice", { detail: { result: entry.total, die, theme, crit, rolls: rolls.map(r=>r.v) } }));
       }, 480);
     }

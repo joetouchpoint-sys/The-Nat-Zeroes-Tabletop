@@ -88,7 +88,7 @@
         React.createElement("p", { style: { margin: 0, fontStyle: "italic", color: "var(--ink-dim)", fontSize: 13.5, lineHeight: 1.5 } }, "\u201c" + e.blurb + "\u201d"),
         React.createElement("div", { className: "row", style: { gap: 10, justifyContent: "flex-end" } },
           React.createElement("button", { className: "btn ghost", onClick: onClose }, "Close"),
-          React.createElement("button", { className: "btn primary", onClick: onClose }, React.createElement(Icon, { name: "plus", size: 16 }), "Add to current map")))
+          React.createElement("button", { className: "btn primary", onClick: () => { window.dispatchEvent(new CustomEvent("nz:addtoken", { detail: e })); onClose(); } }, React.createElement(Icon, { name: "plus", size: 16 }), "Add to map")))
     );
   }
 

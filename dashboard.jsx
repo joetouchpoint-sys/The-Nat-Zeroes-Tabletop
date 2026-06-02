@@ -17,7 +17,7 @@
     (p, c) => `Roll for initiative, ${p}. ${c} is already bleeding slightly.`,
   ];
 
-  function Dashboard({ data, go, user, onCampaignSave }) {
+  function Dashboard({ data, go, user, onCampaignSave, timeline, setTimeline }) {
     const ctx = useContext(window.NZAuth.RoleContext);
     const isDM = ctx.role === "dm";
     const { party, dm, recaps, stats, sessions, campaign } = data;
@@ -95,7 +95,11 @@
             quickLink("map", "The Table", "Battle map", () => go("map")),
             quickLink("bestiary", "Bestiary", "Custom enemies", () => go("bestiary")),
             quickLink("sparkle", "Chat Zeroes", "Aftershow", () => go("chatzeros")),
-            quickLink("scheduler", "Schedule", "Book sessions", () => go("scheduler"))))),
+            quickLink("scheduler", "Schedule", "Book sessions", () => go("scheduler")),
+            quickLink("pin", "Lore & NPCs", "World knowledge", () => go("lore"))))),
+
+      // Campaign timeline (collapsible below left column)
+      timeline && React.createElement(CampaignTimeline, { timeline, setTimeline, isDM }),
 
       // Campaign edit modal (DM only)
       React.createElement(CampaignModal, { open: editCampaign, initial: campaign, onClose: () => setEditCampaign(false), onSave: (c) => { onCampaignSave && onCampaignSave(c); setEditCampaign(false); } })
@@ -154,6 +158,36 @@
       onMouseLeave: (e) => { e.currentTarget.style.borderColor = "var(--hair)"; e.currentTarget.style.background = "var(--surface)"; } },
       React.createElement("div", { style: { color: "var(--gold)" } }, React.createElement(Icon, { name: icon, size: 19 })),
       React.createElement("div", { className: "col" }, React.createElement("span", { style: { fontSize: 13.5, fontWeight: 600 } }, title), React.createElement("span", { className: "muted", style: { fontSize: 11.5 } }, sub)));
+  }
+
+  function CampaignTimeline({ timeline, setTimeline, isDM }) {
+    const [open, setOpen] = useState(false);
+    const [text, setText] = useState(""), [sess, setSess] = useState(""), [date, setDate] = useState("");
+    function add() {
+      if (!text.trim()) return;
+      setTimeline((t) => [{ id: "tl" + Date.now(), session: sess, date, text }, ...t]);
+      setText(""); setSess(""); setDate("");
+    }
+    return React.createElement("div", { style: { maxWidth: 820, marginTop: 28 } },
+      React.createElement("div", { className: "row", style: { marginBottom: 12, gap: 10 } },
+        React.createElement("div", { className: "section-title", style: { margin: 0 } }, "📅 Campaign Timeline"),
+        React.createElement("div", { className: "spacer" }),
+        isDM && React.createElement("button", { className: "btn sm ghost", onClick: () => setOpen((x) => !x) }, open ? "▲ Hide add" : "▼ Add event")),
+      open && isDM && React.createElement("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" } },
+        React.createElement("input", { className: "input", placeholder: "Ep/Session", value: sess, onChange: (e) => setSess(e.target.value), style: { width: 90 }, autoFocus: true }),
+        React.createElement("input", { className: "input", placeholder: "Date", value: date, onChange: (e) => setDate(e.target.value), style: { width: 120 } }),
+        React.createElement("input", { className: "input", placeholder: "What happened?", value: text, onChange: (e) => setText(e.target.value), style: { flex: 1, minWidth: 200 }, onKeyDown: (e) => e.key === "Enter" && add() }),
+        React.createElement("button", { className: "btn primary sm", onClick: add }, "Add")),
+      timeline.length === 0 && React.createElement("div", { className: "muted", style: { fontSize: 13, fontStyle: "italic" } }, "No events logged yet."),
+      React.createElement("div", { style: { position: "relative", paddingLeft: 22 } },
+        React.createElement("div", { style: { position: "absolute", left: 6, top: 6, bottom: 6, width: 2, background: "linear-gradient(var(--gold-deep), transparent)" } }),
+        timeline.map((ev) => React.createElement("div", { key: ev.id, style: { position: "relative", marginBottom: 14, paddingLeft: 6 } },
+          React.createElement("div", { style: { position: "absolute", left: -16, top: 4, width: 12, height: 12, borderRadius: "50%", background: "var(--gold)", border: "2px solid var(--bg)" } }),
+          React.createElement("div", { className: "row", style: { gap: 8, marginBottom: 3 } },
+            ev.session && React.createElement("span", { className: "tag gold", style: { fontSize: 10 } }, "Ep " + ev.session),
+            ev.date && React.createElement("span", { className: "muted", style: { fontSize: 12 } }, ev.date),
+            isDM && React.createElement("button", { onClick: () => setTimeline((t) => t.filter((x) => x.id !== ev.id)), style: { background: "none", border: "none", color: "var(--red-bright)", cursor: "pointer", fontSize: 12, marginLeft: "auto" } }, "✕")),
+          React.createElement("div", { style: { fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.5 } }, ev.text)))));
   }
 
   window.Dashboard = Dashboard;

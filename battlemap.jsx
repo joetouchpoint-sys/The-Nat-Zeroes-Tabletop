@@ -1,6 +1,27 @@
 /* THE TABLE — battle map with draggable tokens, fog of war, measure, ping */
 (function () {
   const { useState, useRef, useEffect, useCallback, useContext } = React;
+  function lsGet(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch(e) { return fb; } }
+  function lsSet(k, val) { try { localStorage.setItem(k, JSON.stringify(val)); } catch(e) {} }
+
+  // Condition definitions (D&D 5e full set)
+  const CONDITIONS = [
+    { code: "Bl", label: "Blinded",      color: "#666" },
+    { code: "Ch", label: "Charmed",      color: "#f472b6" },
+    { code: "De", label: "Deafened",     color: "#888" },
+    { code: "Ex", label: "Exhausted",    color: "#f97316" },
+    { code: "Fr", label: "Frightened",   color: "#dc2626" },
+    { code: "Gr", label: "Grappled",     color: "#65a30d" },
+    { code: "In", label: "Incapacitated",color: "#eab308" },
+    { code: "Iv", label: "Invisible",    color: "#e2e8f0" },
+    { code: "Pa", label: "Paralyzed",    color: "#7c3aed" },
+    { code: "Pe", label: "Petrified",    color: "#78716c" },
+    { code: "Po", label: "Poisoned",     color: "#16a34a" },
+    { code: "Pr", label: "Prone",        color: "#92400e" },
+    { code: "Re", label: "Restrained",   color: "#b45309" },
+    { code: "St", label: "Stunned",      color: "#0891b2" },
+    { code: "Un", label: "Unconscious",  color: "#1e293b" },
+  ];
   const Icon = window.Icon;
   const { Token, HPBar } = window.NZUI;
 
@@ -50,11 +71,19 @@
     const [cell, setCell] = useState(46);
     const [showGrid, setShowGrid] = useState(true);
 
-    // tokens keyed by map
+    // tokens keyed by map — load from localStorage, fall back to seed
     const [tokensByMap, setTokensByMap] = useState(() => {
+      const saved = lsGet("nz_tokens", null);
+      if (saved && Object.keys(saved).length > 0) {
+        // Re-sync UIDC from saved tokens so new tokens get unique IDs
+        Object.values(saved).flat().forEach((t) => {
+          const n = parseInt((t.uid || "").replace("t", ""), 10);
+          if (!isNaN(n) && n > UIDC) UIDC = n;
+        });
+        return saved;
+      }
       const init = {};
       maps.forEach((m) => { init[m.id] = []; });
-      // seed active map
       init[maps[0].id] = [
         mkTok(party[0], 6, 7, "pc"), mkTok(party[1], 7, 8, "pc"),
         mkTok(party[2], 5, 9, "pc"), mkTok(party[3], 8, 6, "pc"),
@@ -71,8 +100,14 @@
     const tokens = tokensByMap[activeMapId] || [];
     const setTokens = (updater) => setTokensByMap((s) => ({ ...s, [activeMapId]: typeof updater === "function" ? updater(s[activeMapId] || []) : updater }));
 
-    // fog: Set of "c,r" revealed cells, per map
+    // fog: Set of "c,r" revealed cells, per map — persisted as arrays
     const [fogByMap, setFogByMap] = useState(() => {
+      const savedRaw = lsGet("nz_fog", null);
+      if (savedRaw && Object.keys(savedRaw).length > 0) {
+        const result = {};
+        Object.keys(savedRaw).forEach((k) => { result[k] = new Set(savedRaw[k]); });
+        return result;
+      }
       const reveal = (cols, rows, c0, c1, r0, r1) => {
         const s = new Set();
         for (let c = c0; c <= c1; c++) for (let r = r0; r <= r1; r++) if (c >= 0 && c < cols && r >= 0 && r < rows) s.add(`${c},${r}`);
@@ -89,15 +124,63 @@
 
     const [selected, setSelected] = useState(null);
     const [pings, setPings] = useState([]);
-    const [measure, setMeasure] = useState(null); // {from:{x,y}, to:{x,y}}
+    const [measure, setMeasure] = useState(null);
     const [diceOpen, setDiceOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [addOpen, setAddOpen] = useState(false);
     const [view3d, setView3d] = useState(false);
     const [hexMode, setHexMode] = useState(false);
-    const [mapDice, setMapDice] = useState(null); // {result, die, theme, crit, pos:{x,y}}
+    const [mapDice, setMapDice] = useState(null);
+    // ---- new Phase 1 state ----
+    const [timerSecs, setTimerSecs] = useState(60);
+    const [timerLeft, setTimerLeft] = useState(60);
+    const [timerOn, setTimerOn] = useState(false);
+    const [combatLog, setCombatLog] = useState([]);
+    const [mapLog, setMapLog] = useState([]);
+    const [condPickerUid, setCondPickerUid] = useState(null); // uid of token showing condition picker
+    const [noteEdit, setNoteEdit] = useState(false);
+    const [encounters, setEncounters] = useState(() => lsGet("nz_encounters", []));
+    const [prepOpen, setPrepOpen] = useState(false);
+    const [prep, setPrep] = useState(() => lsGet("nz_prep", ["Place tokens","Set fog","Prep encounter","Cue music","Check initiative"].map((t, i) => ({ id: i, text: t, done: false }))));
+    const [soundUrl, setSoundUrl] = useState("");
+    const [soundOpen, setSoundOpen] = useState(false);
 
-    // listen for nz:dice events to show dice on map
+    // Persist fog and tokens on change
+    useEffect(() => {
+      const serial = {};
+      Object.keys(fogByMap).forEach((k) => { serial[k] = [...fogByMap[k]]; });
+      lsSet("nz_fog", serial);
+    }, [fogByMap]);
+    useEffect(() => { lsSet("nz_tokens", tokensByMap); }, [tokensByMap]);
+    useEffect(() => { lsSet("nz_encounters", encounters); }, [encounters]);
+    useEffect(() => { lsSet("nz_prep", prep); }, [prep]);
+
+    // Timer countdown
+    useEffect(() => {
+      if (!timerOn || timerLeft <= 0) { if (timerLeft <= 0) setTimerOn(false); return; }
+      const t = setTimeout(() => setTimerLeft((l) => l - 1), 1000);
+      return () => clearTimeout(t);
+    }, [timerOn, timerLeft]);
+
+    // Keyboard shortcut event listeners
+    React.useEffect(() => {
+      const onDice = () => setDiceOpen(true);
+      const onNext = () => nextTurn();
+      const onRoll = () => rollInitiative();
+      const onFog = () => setTool((t) => t === "fog" ? "select" : "fog");
+      window.addEventListener("nz:opendice", onDice);
+      window.addEventListener("nz:nextturn", onNext);
+      window.addEventListener("nz:rollinitiative", onRoll);
+      window.addEventListener("nz:fogtoggle", onFog);
+      return () => {
+        window.removeEventListener("nz:opendice", onDice);
+        window.removeEventListener("nz:nextturn", onNext);
+        window.removeEventListener("nz:rollinitiative", onRoll);
+        window.removeEventListener("nz:fogtoggle", onFog);
+      };
+    }, []);
+
+    // listen for nz:dice + nz:addtoken events
     React.useEffect(() => {
       function handleDice(e) {
         const { result, die, theme, crit } = e.detail;
@@ -108,10 +191,20 @@
         const py = margin + Math.random() * Math.max(0, rect.height - margin * 2);
         setMapDice({ result, die, theme, crit, pos: { x: px, y: py }, id: Date.now() });
         setTimeout(() => setMapDice(null), 3200);
+        const label = die + ": " + result + (crit === "nat20" ? " ★NAT 20!" : crit === "nat1" ? " ✗Nat 1" : "");
+        setMapLog((l) => [{ id: Date.now(), text: "🎲 " + label, kind: crit || "normal" }, ...l].slice(0, 15));
+      }
+      function handleAddToken(e) {
+        const src = e.detail;
+        const kindFor = (src.side === "ally") ? "ally" : "enemy";
+        const spot = freeSpot(tokensByMap[activeMapId] || [], map);
+        setTokens((ts) => [...ts, mkTok(src, spot.c, spot.r, kindFor)]);
+        addLog("➕ " + src.name + " added to map", "add");
       }
       window.addEventListener("nz:dice", handleDice);
-      return () => window.removeEventListener("nz:dice", handleDice);
-    }, []);
+      window.addEventListener("nz:addtoken", handleAddToken);
+      return () => { window.removeEventListener("nz:dice", handleDice); window.removeEventListener("nz:addtoken", handleAddToken); };
+    }, [activeMapId, map]);
 
     const stageRef = useRef(null);
     const drag = useRef(null);
@@ -178,6 +271,11 @@
       } catch(err) { console.error("startTokenDrag", err); drag.current = null; }
     }
 
+    // ---- combat log helper ----
+    function addLog(text, kind) {
+      setCombatLog((l) => [{ id: Date.now() + Math.random(), text, kind }, ...l].slice(0, 60));
+    }
+
     // ---- initiative ----
     const [round, setRound] = useState(1);
     const [turnIdx, setTurnIdx] = useState(0);
@@ -185,19 +283,26 @@
     const activeUid = order[turnIdx % Math.max(1, order.length)]?.uid;
     function nextTurn() {
       const ni = turnIdx + 1;
-      if (ni >= order.length) { setTurnIdx(0); setRound((r) => r + 1); }
-      else setTurnIdx(ni);
+      const newRound = ni >= order.length;
+      if (newRound) { setTurnIdx(0); setRound((r) => { addLog("🔁 Round " + (r + 1) + " begins", "round"); return r + 1; }); }
+      else { setTurnIdx(ni); const next = order[ni]; if (next) addLog("⏩ " + next.name + "'s turn", "turn"); }
+      if (timerSecs > 0) { setTimerLeft(timerSecs); setTimerOn(true); }
+      if (window.NZSounds) window.NZSounds.play("turn");
     }
     function rollInitiative() {
       setTokens((ts) => ts.map((t) => ({ ...t, init: 1 + Math.floor(Math.random() * 20) + t.initMod })));
-      setTurnIdx(0); setRound(1);
+      setTurnIdx(0); setRound(1); addLog("🎲 Initiative rolled", "roll");
     }
 
     function damage(uid, amt) {
       setTokens((ts) => ts.map((t) => {
         if (t.uid !== uid) return t;
         const hp = clamp(t.hp + amt, 0, t.hpMax);
-        return { ...t, hp, bloodied: hp <= t.hpMax / 2 && hp > 0, dead: hp === 0 };
+        const dead = hp === 0;
+        if (dead && !t.dead) { addLog("💀 " + t.name + " defeated", "death"); if (window.NZSounds) window.NZSounds.play("death"); }
+        else if (amt < 0) { addLog("⚔ " + Math.abs(amt) + " damage to " + t.name, "damage"); if (window.NZSounds) window.NZSounds.play("damage"); }
+        else if (amt > 0) { addLog("💚 +" + amt + " HP to " + t.name, "heal"); }
+        return { ...t, hp, bloodied: hp <= t.hpMax / 2 && hp > 0, dead };
       }));
     }
     function removeToken(uid) { setTokens((ts) => ts.filter((t) => t.uid !== uid)); if (selected === uid) setSelected(null); }
@@ -254,9 +359,13 @@
             onMoveToken: canMove ? (uid, c, r) => setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(c, 0, map.cols - 1), r: clamp(r, 0, map.rows - 1) } : t)) : null }),
           view3d && React.createElement("div", { style: { position: "absolute", top: 14, left: 16, zIndex: 12, fontSize: 12, color: "var(--ink-dim)", background: "rgba(13,10,20,0.7)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 12px", backdropFilter: "blur(6px)" } }, "Orbit: drag \u00b7 Zoom: scroll \u00b7 Move token: click figure then click destination"),
           // map note
-          React.createElement("div", { style: { position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 12, background: "rgba(13,10,20,0.8)", border: "1px solid var(--hair)", borderRadius: 100, padding: "6px 16px", fontSize: 13, color: "var(--ink-soft)", backdropFilter: "blur(6px)" } },
-            React.createElement("span", { style: { color: "var(--gold)", fontFamily: "var(--display)", marginRight: 8 } }, "\u2727"),
-            map.note),
+          React.createElement("div", { style: { position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 12, background: "rgba(13,10,20,0.8)", border: "1px solid var(--hair)", borderRadius: 100, padding: "6px 16px", fontSize: 13, color: "var(--ink-soft)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", gap: 8 } },
+            React.createElement("span", { style: { color: "var(--gold)", fontFamily: "var(--display)" } }, "\u2727"),
+            canEdit && noteEdit
+              ? React.createElement("input", { autoFocus: true, className: "input", defaultValue: map.note, style: { height: 24, padding: "0 8px", fontSize: 13, minWidth: 220, borderRadius: 100 },
+                  onBlur: (e) => { setMapList((l) => l.map((m) => m.id === activeMapId ? { ...m, note: e.target.value } : m)); setNoteEdit(false); },
+                  onKeyDown: (e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setNoteEdit(false); } })
+              : React.createElement("span", { onClick: canEdit ? () => setNoteEdit(true) : undefined, title: canEdit ? "Click to edit note" : undefined, style: { cursor: canEdit ? "text" : "default" } }, map.note)),
           // scrollable stage
           !view3d && React.createElement("div", { style: { position: "absolute", inset: 0, overflow: "auto", display: "grid", placeItems: "center", padding: 30 } },
             React.createElement("div", {
@@ -274,21 +383,33 @@
                 backgroundImage: `linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px)`,
                 backgroundSize: `${cell}px ${cell}px` } }),
               showGrid && hexMode && React.createElement(HexGridOverlay, { cols: map.cols, rows: map.rows, cell }),
-              // tokens
-              tokens.map((t) => React.createElement("div", {
-                key: t.uid, className: "tok",
-                onPointerDown: (e) => startTokenDrag(e, t),
-                onClick: (e) => { e.stopPropagation(); setSelected(t.uid); },
-                style: { position: "absolute", left: t.c * cell, top: t.r * cell, width: cell, height: cell, display: "grid", placeItems: "center",
-                  zIndex: selected === t.uid ? 20 : 10, cursor: tool === "select" ? "grab" : "inherit",
-                  outline: selected === t.uid ? "2px solid var(--gold)" : "none", outlineOffset: -2, borderRadius: 8,
-                  transition: drag.current?.uid === t.uid ? "none" : "left .18s ease, top .18s ease" },
-              },
-                t.uid === activeUid && React.createElement("div", { style: { position: "absolute", inset: 1, borderRadius: "50%", boxShadow: "0 0 0 3px var(--gold), 0 0 18px var(--gold)", animation: "glowpulse 1.6s ease-in-out infinite" } }),
-                React.createElement(Token, { name: t.name, ring: t.ring, size: cell - 8, bloodied: t.bloodied, dead: t.dead, condition: t.condition }),
-                React.createElement("div", { style: { position: "absolute", bottom: -3, left: 4, right: 4, height: 4, borderRadius: 4, background: "rgba(0,0,0,0.5)", overflow: "hidden" } },
-                  React.createElement("div", { style: { width: `${(t.hp / t.hpMax) * 100}%`, height: "100%", background: t.hp > t.hpMax / 2 ? "var(--emerald)" : t.hp > t.hpMax / 4 ? "var(--gold)" : "var(--red)" } }))
-              )),
+              // tokens (with size span, condition badge, right-click condition picker)
+              tokens.map((t) => {
+                const span = t.cellSpan || 1;
+                const condDef = CONDITIONS.find((c) => c.code === t.condition);
+                return React.createElement("div", {
+                  key: t.uid, className: "tok",
+                  onPointerDown: (e) => startTokenDrag(e, t),
+                  onClick: (e) => { e.stopPropagation(); setSelected(t.uid); setCondPickerUid(null); },
+                  onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); if (canMove) setCondPickerUid(t.uid === condPickerUid ? null : t.uid); },
+                  style: { position: "absolute", left: t.c * cell, top: t.r * cell, width: cell * span, height: cell * span, display: "grid", placeItems: "center",
+                    zIndex: selected === t.uid ? 20 : 10, cursor: tool === "select" ? "grab" : "inherit",
+                    outline: selected === t.uid ? "2px solid var(--gold)" : "none", outlineOffset: -2, borderRadius: 8,
+                    transition: drag.current && drag.current.uid === t.uid ? "none" : "left .18s ease, top .18s ease" },
+                },
+                  t.uid === activeUid && React.createElement("div", { style: { position: "absolute", inset: 1, borderRadius: "50%", boxShadow: "0 0 0 3px var(--gold), 0 0 18px var(--gold)", animation: "glowpulse 1.6s ease-in-out infinite", pointerEvents: "none" } }),
+                  React.createElement(Token, { name: t.name, ring: t.ring, size: (cell * span) - 8, bloodied: t.bloodied, dead: t.dead }),
+                  // Condition badge
+                  condDef && React.createElement("div", { style: { position: "absolute", top: 2, right: 2, background: condDef.color, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 4, zIndex: 6, fontFamily: "var(--mono)", pointerEvents: "none", textShadow: "0 1px 2px rgba(0,0,0,0.6)" } }, condDef.code),
+                  // Condition picker (right-click)
+                  condPickerUid === t.uid && React.createElement("div", { style: { position: "absolute", top: "100%", left: 0, zIndex: 40, background: "var(--bg-2)", border: "1px solid var(--hair)", borderRadius: 10, padding: 8, display: "flex", flexWrap: "wrap", gap: 4, width: 200, boxShadow: "var(--shadow-3)" } },
+                    React.createElement("div", { style: { width: "100%", fontSize: 10, color: "var(--ink-dim)", fontFamily: "var(--display)", letterSpacing: "0.1em", marginBottom: 2 } }, "CONDITION"),
+                    React.createElement("button", { onClick: (e) => { e.stopPropagation(); setTokens((ts) => ts.map((x) => x.uid === t.uid ? { ...x, condition: null } : x)); setCondPickerUid(null); }, style: { fontSize: 11, padding: "2px 6px", borderRadius: 4, border: "1px solid var(--hair)", background: !t.condition ? "var(--gold)" : "var(--surface)", color: !t.condition ? "#000" : "var(--ink-soft)", cursor: "pointer" } }, "None"),
+                    CONDITIONS.map((c) => React.createElement("button", { key: c.code, onClick: (e) => { e.stopPropagation(); setTokens((ts) => ts.map((x) => x.uid === t.uid ? { ...x, condition: x.condition === c.code ? null : c.code } : x)); setCondPickerUid(null); }, style: { fontSize: 11, padding: "2px 6px", borderRadius: 4, border: "1px solid " + c.color + "88", background: t.condition === c.code ? c.color : "var(--surface)", color: t.condition === c.code ? "#fff" : "var(--ink-soft)", cursor: "pointer" } }, c.code))),
+                  React.createElement("div", { style: { position: "absolute", bottom: -3, left: 4, right: 4, height: 4, borderRadius: 4, background: "rgba(0,0,0,0.5)", overflow: "hidden", pointerEvents: "none" } },
+                    React.createElement("div", { style: { width: (t.hpMax > 0 ? (t.hp / t.hpMax) * 100 : 0) + "%", height: "100%", background: t.hp > t.hpMax / 2 ? "var(--emerald)" : t.hp > t.hpMax / 4 ? "var(--gold)" : "var(--red)" } }))
+                );
+              }),
               // fog overlay
               fogEnabled && React.createElement("div", { style: { position: "absolute", inset: 0, pointerEvents: "none", zIndex: 15,
                 display: "grid", gridTemplateColumns: `repeat(${map.cols}, ${cell}px)`, gridTemplateRows: `repeat(${map.rows}, ${cell}px)` } },
@@ -317,7 +438,8 @@
         )
       ),
       // ===== RIGHT: initiative panel =====
-      React.createElement(InitiativePanel, { order, activeUid, round, turnIdx, nextTurn, rollInitiative, selected, setSelected, damage, cell }),
+      React.createElement(InitiativePanel, { order, activeUid, round, turnIdx, nextTurn, rollInitiative, selected, setSelected, damage,
+        timerLeft, timerSecs, setTimerSecs, timerOn, combatLog, mapLog }),
       // modals
       React.createElement(UploadMapModal, { open: uploadOpen, onClose: () => setUploadOpen(false), onUpload: handleUpload }),
       React.createElement(AddTokenModal, { open: addOpen, onClose: () => setAddOpen(false), party, bestiary, onAdd: addToken })
@@ -355,55 +477,88 @@
 
   // ---------- Token HUD ----------
   function TokenHUD({ sel, damage, removeToken, addCondition, onClose }) {
-    const conds = [["P", "Prone"], ["S", "Stunned"], ["G", "Grappled"], ["F", "Frightened"], ["X", "Poisoned"]];
-    return React.createElement("div", { className: "panel rise", style: { position: "absolute", bottom: 18, left: 14, zIndex: 35, width: 290, background: "rgba(24,18,34,0.96)", backdropFilter: "blur(8px)" } },
+    const [customAmt, setCustomAmt] = React.useState("");
+    return React.createElement("div", { className: "panel rise", style: { position: "absolute", bottom: 18, left: 14, zIndex: 35, width: 310, background: "rgba(24,18,34,0.96)", backdropFilter: "blur(8px)" } },
       React.createElement("div", { className: "panel-h", style: { padding: "11px 14px" } },
         React.createElement(window.NZUI.Token, { name: sel.name, ring: sel.ring, size: 30 }),
         React.createElement("div", { className: "col", style: { minWidth: 0 } },
           React.createElement("h3", { style: { fontSize: 13, color: "var(--ink)", textTransform: "none", letterSpacing: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 170 } }, sel.name),
-          React.createElement("span", { className: "muted", style: { fontSize: 11 } }, sel.kind === "pc" ? "Player Character" : "Enemy")),
+          React.createElement("span", { className: "muted", style: { fontSize: 11 } }, sel.kind === "pc" ? "Player Character" : sel.kind === "ally" ? "Ally" : "Enemy")),
         React.createElement("div", { className: "spacer" }),
         React.createElement("button", { className: "icon-btn", style: { width: 28, height: 28 }, onClick: onClose }, React.createElement(Icon, { name: "x", size: 15 }))),
-      React.createElement("div", { style: { padding: 14, display: "flex", flexDirection: "column", gap: 12 } },
+      React.createElement("div", { style: { padding: 14, display: "flex", flexDirection: "column", gap: 10 } },
         React.createElement(HPBar, { hp: sel.hp, max: sel.hpMax }),
         React.createElement("div", { className: "row", style: { gap: 6 } },
+          React.createElement("button", { className: "btn danger sm", style: { flex: 1 }, onClick: () => damage(sel.uid, -10) }, "\u221210"),
           React.createElement("button", { className: "btn danger sm", style: { flex: 1 }, onClick: () => damage(sel.uid, -5) }, "\u22125"),
           React.createElement("button", { className: "btn danger sm", style: { flex: 1 }, onClick: () => damage(sel.uid, -1) }, "\u22121"),
           React.createElement("button", { className: "btn sm", style: { flex: 1, color: "var(--emerald)" }, onClick: () => damage(sel.uid, 1) }, "+1"),
           React.createElement("button", { className: "btn sm", style: { flex: 1, color: "var(--emerald)" }, onClick: () => damage(sel.uid, 5) }, "+5")),
-        React.createElement("div", { className: "row", style: { gap: 5, flexWrap: "wrap" } },
-          conds.map(([k, label]) => React.createElement("button", { key: k, title: label, onClick: () => addCondition(k), style: condBtn(sel.condition === k) }, label))),
+        React.createElement("div", { className: "row", style: { gap: 6 } },
+          React.createElement("input", { className: "input", type: "number", placeholder: "Custom dmg/heal", value: customAmt, onChange: (e) => setCustomAmt(e.target.value), style: { flex: 1, height: 32, fontSize: 13 } }),
+          React.createElement("button", { className: "btn danger sm", onClick: () => { if (customAmt) { damage(sel.uid, -Math.abs(+customAmt)); setCustomAmt(""); } } }, "Dmg"),
+          React.createElement("button", { className: "btn sm", style: { color: "var(--emerald)" }, onClick: () => { if (customAmt) { damage(sel.uid, Math.abs(+customAmt)); setCustomAmt(""); } } }, "Heal")),
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
+          CONDITIONS.map((c) => React.createElement("button", { key: c.code, title: c.label, onClick: () => addCondition(c.code),
+            style: { fontSize: 10, padding: "2px 5px", borderRadius: 4, border: "1px solid " + c.color + "88", background: sel.condition === c.code ? c.color : "var(--surface-2)", color: sel.condition === c.code ? "#fff" : "var(--ink-dim)", cursor: "pointer", fontWeight: 600 } }, c.code))),
         React.createElement("button", { className: "btn ghost sm", style: { color: "var(--red-bright)" }, onClick: () => removeToken(sel.uid) },
-          React.createElement(Icon, { name: "trash", size: 15 }), "Remove from map"))
+          React.createElement(Icon, { name: "skull", size: 15 }), "Remove from map"))
     );
   }
 
   // ---------- Initiative panel ----------
-  function InitiativePanel({ order, activeUid, round, turnIdx, nextTurn, rollInitiative, selected, setSelected, damage }) {
+  function InitiativePanel({ order, activeUid, round, turnIdx, nextTurn, rollInitiative, selected, setSelected, damage,
+      timerLeft, timerSecs, setTimerSecs, timerOn, combatLog, mapLog }) {
+    const pct = timerSecs > 0 ? (timerLeft / timerSecs) * 100 : 0;
+    const timerColor = pct > 50 ? "var(--emerald)" : pct > 20 ? "var(--gold)" : "var(--red)";
+    const [logTab, setLogTab] = React.useState("combat"); // "combat" | "dice"
     return React.createElement("div", { style: { borderLeft: "1px solid var(--hair)", background: "var(--bg-2)", display: "flex", flexDirection: "column", minHeight: 0 } },
+      // Header
       React.createElement("div", { className: "panel-h", style: { borderRadius: 0, borderBottom: "1px solid var(--hair)" } },
         React.createElement(Icon, { name: "swords", size: 18, style: { color: "var(--gold-bright)" } }),
         React.createElement("h3", null, "Initiative"),
         React.createElement("div", { className: "spacer" }),
         React.createElement("span", { className: "tag gold" }, "Round " + round)),
-      React.createElement("div", { style: { padding: 12, display: "flex", gap: 8, borderBottom: "1px solid var(--hair)" } },
-        React.createElement("button", { className: "btn primary", style: { flex: 1 }, onClick: nextTurn }, React.createElement(Icon, { name: "play", size: 16 }), "Next turn"),
-        React.createElement("button", { className: "btn", title: "Roll initiative for all", onClick: rollInitiative }, React.createElement(Icon, { name: "dice", size: 16 }))),
+      // Action buttons + timer
+      React.createElement("div", { style: { padding: "10px 12px", borderBottom: "1px solid var(--hair)" } },
+        React.createElement("div", { style: { display: "flex", gap: 8, marginBottom: 8 } },
+          React.createElement("button", { className: "btn primary", style: { flex: 1 }, onClick: nextTurn }, React.createElement(Icon, { name: "play", size: 16 }), "Next turn"),
+          React.createElement("button", { className: "btn", title: "Roll initiative", onClick: rollInitiative }, React.createElement(Icon, { name: "dice", size: 16 }))),
+        // Timer bar
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          React.createElement("div", { style: { flex: 1, height: 6, background: "var(--surface-3)", borderRadius: 4, overflow: "hidden" } },
+            React.createElement("div", { style: { width: pct + "%", height: "100%", background: timerColor, transition: "width 1s linear, background 0.3s", borderRadius: 4 } })),
+          React.createElement("span", { className: "mono", style: { fontSize: 11, color: pct < 20 && timerOn ? "var(--red-bright)" : "var(--ink-dim)", minWidth: 24, textAlign: "right" } }, timerLeft + "s"),
+          React.createElement("select", { value: timerSecs, onChange: (e) => setTimerSecs(+e.target.value), style: { background: "var(--surface-2)", border: "1px solid var(--hair)", color: "var(--ink-soft)", borderRadius: 6, fontSize: 11, padding: "1px 4px", cursor: "pointer" } },
+            [0, 30, 45, 60, 90, 120].map((s) => React.createElement("option", { key: s, value: s }, s === 0 ? "Off" : s + "s"))))),
+      // Initiative order list
       React.createElement("div", { style: { flex: 1, overflow: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 6 } },
-        order.length === 0 && React.createElement("div", { className: "muted", style: { textAlign: "center", padding: 30, fontSize: 13 } }, "No combatants on this map yet."),
-        order.map((t, i) => React.createElement("div", {
+        order.length === 0 && React.createElement("div", { className: "muted", style: { textAlign: "center", padding: 20, fontSize: 13 } }, "No combatants yet."),
+        order.map((t) => React.createElement("div", {
           key: t.uid, onClick: () => setSelected(t.uid),
           style: initRow(t.uid === activeUid, t.uid === selected),
         },
           React.createElement("div", { className: "mono", style: { width: 26, textAlign: "center", fontSize: 16, fontWeight: 700, color: t.uid === activeUid ? "var(--gold-bright)" : "var(--ink-dim)" } }, t.init),
           React.createElement(window.NZUI.Token, { name: t.name, ring: t.ring, size: 34, bloodied: t.bloodied, dead: t.dead }),
           React.createElement("div", { className: "col", style: { flex: 1, minWidth: 0 } },
-            React.createElement("div", { style: { fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: t.dead ? "var(--ink-faint)" : "var(--ink)", textDecoration: t.dead ? "line-through" : "none" } }, t.name),
-            React.createElement("div", { style: { height: 5, borderRadius: 4, background: "rgba(0,0,0,0.4)", overflow: "hidden", marginTop: 4 } },
-              React.createElement("div", { style: { width: `${(t.hp / t.hpMax) * 100}%`, height: "100%", background: t.hp > t.hpMax / 2 ? "var(--emerald)" : t.hp > t.hpMax / 4 ? "var(--gold)" : "var(--red)" } }))),
-          React.createElement("span", { className: "tag", style: { fontSize: 10, padding: "2px 7px", color: t.kind === "enemy" ? "var(--red-bright)" : "var(--emerald)", borderColor: "transparent", background: "transparent" } }, t.kind === "pc" ? "PC" : t.kind === "ally" ? "ALLY" : "NPC")
-        )))
-    );
+            React.createElement("div", { style: { fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: t.dead ? "var(--ink-faint)" : "var(--ink)", textDecoration: t.dead ? "line-through" : "none" } }, t.name),
+            t.condition && React.createElement("div", { style: { fontSize: 10, color: (CONDITIONS.find((c) => c.code === t.condition) || {}).color || "var(--ink-dim)" } },
+              (CONDITIONS.find((c) => c.code === t.condition) || {}).label),
+            React.createElement("div", { style: { height: 4, borderRadius: 4, background: "rgba(0,0,0,0.4)", overflow: "hidden", marginTop: 3 } },
+              React.createElement("div", { style: { width: (t.hpMax > 0 ? (t.hp / t.hpMax) * 100 : 0) + "%", height: "100%", background: t.hp > t.hpMax / 2 ? "var(--emerald)" : t.hp > t.hpMax / 4 ? "var(--gold)" : "var(--red)" } }))),
+          React.createElement("span", { className: "tag", style: { fontSize: 10, padding: "2px 6px", color: t.kind === "enemy" ? "var(--red-bright)" : "var(--emerald)", borderColor: "transparent", background: "transparent" } }, t.kind === "pc" ? "PC" : t.kind === "ally" ? "ALLY" : "NPC")
+        ))),
+      // Combat / Dice log at the bottom
+      React.createElement("div", { style: { borderTop: "1px solid var(--hair)", maxHeight: 160, display: "flex", flexDirection: "column" } },
+        React.createElement("div", { style: { display: "flex", gap: 0 } },
+          [["combat","⚔ Log"], ["dice","🎲 Rolls"]].map(([tab, label]) =>
+            React.createElement("button", { key: tab, onClick: () => setLogTab(tab),
+              style: { flex: 1, padding: "6px 4px", fontSize: 11, fontWeight: 600, border: "none", borderBottom: "2px solid " + (logTab === tab ? "var(--gold)" : "transparent"), background: "transparent", color: logTab === tab ? "var(--gold-bright)" : "var(--ink-dim)", cursor: "pointer" } }, label))),
+        React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "4px 10px 8px" } },
+          (logTab === "combat" ? combatLog : mapLog).length === 0
+            ? React.createElement("div", { style: { fontSize: 11.5, color: "var(--ink-faint)", textAlign: "center", padding: 12, fontStyle: "italic" } }, "Nothing logged yet")
+            : (logTab === "combat" ? combatLog : mapLog).map((e) =>
+                React.createElement("div", { key: e.id, style: { fontSize: 11.5, color: e.kind === "death" ? "var(--red-bright)" : e.kind === "heal" ? "var(--emerald)" : e.kind === "round" ? "var(--gold)" : "var(--ink-soft)", padding: "2px 0", borderBottom: "1px solid var(--hair)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, e.text)))));
   }
 
   // ---- Map dice overlay (CSS 3D die flying onto the map) ----
@@ -568,8 +723,17 @@
   let UIDC = 0;
   function mkTok(src, c, r, kind, suffix, fresh) {
     return { uid: "t" + (++UIDC), id: src.id, name: src.name + (suffix ? " " + suffix : ""), ring: src.ring,
-      c, r, hp: src.hp, hpMax: src.hpMax, init: src.init ?? (1 + Math.floor(Math.random() * 20)), initMod: src.init ?? 0,
-      kind, bloodied: src.hp <= src.hpMax / 2, dead: false, condition: null };
+      c, r, hp: src.hp, hpMax: src.hpMax, init: src.init != null ? src.init : (1 + Math.floor(Math.random() * 20)),
+      initMod: src.init != null ? src.init : 0,
+      kind, bloodied: src.hp <= src.hpMax / 2, dead: false, condition: null, cellSpan: sizeToSpan(src.size) };
+  }
+  function sizeToSpan(size) {
+    if (!size) return 1;
+    const s = size.toLowerCase();
+    if (s === "large") return 2;
+    if (s === "huge") return 3;
+    if (s === "gargantuan") return 4;
+    return 1;
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function freeSpot(tokens, map) {

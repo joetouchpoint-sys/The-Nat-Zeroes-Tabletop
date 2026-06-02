@@ -22,9 +22,9 @@
 
   // views allowed per role
   const VIEW_ACCESS = {
-    dm:     ["home", "map", "world", "bestiary", "party", "creator", "scheduler", "recaps", "chatzeros", "accounts"],
-    admin:  ["home", "map", "world", "bestiary", "party", "creator", "scheduler", "recaps", "chatzeros", "accounts"],
-    player: ["home", "map", "world", "bestiary", "party", "creator", "scheduler", "recaps", "chatzeros"],
+    dm:     ["home", "map", "world", "bestiary", "party", "lore", "creator", "scheduler", "recaps", "chatzeros", "accounts"],
+    admin:  ["home", "map", "world", "bestiary", "party", "lore", "creator", "scheduler", "recaps", "chatzeros", "accounts"],
+    player: ["home", "map", "world", "bestiary", "party", "lore", "creator", "scheduler", "recaps", "chatzeros"],
     fan:    ["home", "map", "recaps", "extras"],
   };
 

@@ -60,6 +60,7 @@
     { id: "creator", label: "Creator", icon: "user", title: "Character Creator", eyebrow: "Forge a Hero" },
     { id: "scheduler", label: "Schedule", icon: "scheduler", title: "Scheduler", eyebrow: "Plan Sessions" },
     { id: "recaps", label: "Recaps", icon: "recap", title: "Recaps", eyebrow: "Campaign Log" },
+    { id: "lore", label: "Lore", icon: "pin", title: "Lore & NPCs", eyebrow: "World Knowledge" },
     { id: "chatzeros", label: "Chat Zeroes", icon: "sparkle", title: "The Chat Zeroes", eyebrow: "Aftershow · Podcast" },
     { id: "extras", label: "Extras", icon: "flame", title: "Fan Extras", eyebrow: "Bonus Content" },
     { id: "accounts", label: "Accounts", icon: "shield", title: "Accounts & Roles", eyebrow: "Who's Who" },
@@ -69,6 +70,7 @@
     const [user, setUser] = useState(null);
     const [view, setView] = useState("home");
     const [collapsed, setCollapsed] = useState(false);
+    const [mobileRailOpen, setMobileRailOpen] = useState(false);
     const [switchOpen, setSwitchOpen] = useState(false);
     const [pendingMap, setPendingMap] = useState(null);
     const [recaps, setRecaps]       = useState(() => lsGet("nz_recaps",    D.recaps));
@@ -76,6 +78,13 @@
     const [chatStats, setChatStats] = useState(() => lsGet("nz_chatstats", D.chatStats));
     const [awards, setAwards]       = useState(() => lsGet("nz_awards",    D.awards));
     const [quotes, setQuotes]       = useState(() => lsGet("nz_quotes",    []));
+    const [loot, setLoot]           = useState(() => lsGet("nz_loot",      { gold: 0, items: [] }));
+    const [npcs, setNpcs]           = useState(() => lsGet("nz_npcs",      []));
+    const [timeline, setTimeline]   = useState(() => lsGet("nz_timeline",  []));
+    const [deaths, setDeaths]       = useState(() => lsGet("nz_deaths",    []));
+    const [predictions, setPredictions] = useState(() => lsGet("nz_predictions", []));
+    const [gags, setGags]           = useState(() => lsGet("nz_gags",      []));
+    const [shoutouts, setShoutouts] = useState(() => lsGet("nz_shoutouts", []));
     const [worldBgImg, setWorldBgImg] = useState(null);
     useEffect(() => { dbLoad("nz_worldbg", (img) => { if (img) setWorldBgImg(img); }); }, []);
     function saveWorldBg(img) { setWorldBgImg(img); dbSave("nz_worldbg", img || null); }
@@ -85,6 +94,13 @@
     useEffect(() => { lsSet("nz_chatstats", chatStats); }, [chatStats]);
     useEffect(() => { lsSet("nz_awards",    awards);    }, [awards]);
     useEffect(() => { lsSet("nz_quotes",    quotes);    }, [quotes]);
+    useEffect(() => { lsSet("nz_loot",      loot);      }, [loot]);
+    useEffect(() => { lsSet("nz_npcs",      npcs);      }, [npcs]);
+    useEffect(() => { lsSet("nz_timeline",  timeline);  }, [timeline]);
+    useEffect(() => { lsSet("nz_deaths",    deaths);    }, [deaths]);
+    useEffect(() => { lsSet("nz_predictions", predictions); }, [predictions]);
+    useEffect(() => { lsSet("nz_gags",      gags);      }, [gags]);
+    useEffect(() => { lsSet("nz_shoutouts", shoutouts); }, [shoutouts]);
 
     const role = user ? user.role : null;
     const allowed = role ? Auth.VIEW_ACCESS[role] : [];
@@ -96,6 +112,21 @@
 
     const go = (v) => { if (allowed.includes(v)) setView(v); };
     const openMap = (mapId) => { setPendingMap(mapId); setView("map"); };
+
+    // Global keyboard shortcuts
+    useEffect(() => {
+      function onKey(e) {
+        const tag = (e.target || {}).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (e.key === "Escape") { document.querySelectorAll("[data-modal-close]").forEach((el) => el.click()); }
+        if (e.key === "d" || e.key === "D") { if (view === "map") window.dispatchEvent(new CustomEvent("nz:opendice")); }
+        if (e.key === " " && view === "map") { e.preventDefault(); window.dispatchEvent(new CustomEvent("nz:nextturn")); }
+        if (e.key === "r" || e.key === "R") { if (view === "map") window.dispatchEvent(new CustomEvent("nz:rollinitiative")); }
+        if (e.key === "f" || e.key === "F") { if (view === "map") window.dispatchEvent(new CustomEvent("nz:fogtoggle")); }
+      }
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [view]);
     const meta = NAV.find((n) => n.id === view) || NAV[0];
     const roleInfo = Auth.ROLES[role];
     const ctxVal = { user, role, can: (c) => Auth.can(role, c) };
@@ -103,7 +134,7 @@
     return React.createElement(Auth.RoleContext.Provider, { value: ctxVal },
       React.createElement("div", { className: "app" + (collapsed ? " rail-collapsed" : "") },
         // ===== rail =====
-        React.createElement("aside", { className: "rail" + (collapsed ? " collapsed" : "") },
+        React.createElement("aside", { className: "rail" + (collapsed ? " collapsed" : "") + (mobileRailOpen ? " mobile-open" : "") },
           React.createElement("div", { className: "rail-brand", onClick: () => go("home") },
             React.createElement("img", { src: "assets/logo.png", alt: "The Nat Zeroes" }),
             React.createElement("div", { className: "wm" },
@@ -124,7 +155,7 @@
         // ===== main =====
         React.createElement("div", { className: "main" },
           React.createElement("div", { className: "topbar" },
-            React.createElement("button", { className: "icon-btn", onClick: () => setCollapsed((c) => !c), title: "Toggle menu" }, React.createElement(Icon, { name: "menu", size: 18 })),
+            React.createElement("button", { className: "icon-btn", onClick: () => { setCollapsed((c) => !c); setMobileRailOpen((x) => !x); }, title: "Toggle menu" }, React.createElement(Icon, { name: "menu", size: 18 })),
             React.createElement("div", { className: "crumb" },
               React.createElement("span", { className: "eyebrow" }, meta.eyebrow),
               React.createElement("h1", null, meta.title)),
@@ -137,15 +168,16 @@
 
           React.createElement(ErrorBoundary, { key: view },
           React.createElement("div", { className: "view" },
-            view === "home" && React.createElement(window.Dashboard, { data: Object.assign({}, D, { recaps, campaign }), go, user, onCampaignSave: setCampaign }),
+            view === "home" && React.createElement(window.Dashboard, { data: Object.assign({}, D, { recaps, campaign }), go, user, onCampaignSave: setCampaign, timeline, setTimeline }),
             view === "map" && React.createElement(window.BattleMap, { maps: D.maps, party: D.party, bestiary: D.bestiary, dm: D.dm, initialMapId: pendingMap }),
             view === "world" && React.createElement(window.World, { locations: D.locations, maps: D.maps, onOpenMap: openMap, bgImg: worldBgImg, onBgImgChange: saveWorldBg }),
             view === "bestiary" && React.createElement(window.Bestiary, { bestiary: D.bestiary }),
-            view === "party" && React.createElement(window.Party, { party: D.party, dm: D.dm }),
+            view === "party" && React.createElement(window.Party, { party: D.party, dm: D.dm, loot, setLoot }),
             view === "creator" && React.createElement(window.Creator, { party: D.party }),
             view === "scheduler" && React.createElement(window.Scheduler, { members: D.members, pollOptions: D.pollOptions, sessions: D.sessions, weeklySchedule: D.weeklySchedule }),
             view === "recaps" && React.createElement(Recaps, { recaps, setRecaps, stats: D.stats }),
-            view === "chatzeros" && React.createElement(window.ChatZeroes, { chatStats, setChatStats, awards, setAwards, quotes, setQuotes, party: D.party }),
+            view === "chatzeros" && React.createElement(window.ChatZeroes, { chatStats, setChatStats, awards, setAwards, quotes, setQuotes, deaths, setDeaths, predictions, setPredictions, gags, setGags, shoutouts, setShoutouts, party: D.party }),
+            view === "lore" && React.createElement(window.Lore, { npcs, setNpcs }),
             view === "extras" && React.createElement(Extras, { recaps, stats: D.stats, go }),
             view === "accounts" && React.createElement(Auth.AccountsView)))),
 
@@ -168,6 +200,10 @@
     return React.createElement("div", { className: "view-pad", style: { maxWidth: 820 } },
       React.createElement("div", { className: "row", style: { marginBottom: 20, gap: 12, alignItems: "center" } },
         React.createElement("p", { className: "muted", style: { margin: 0, flex: 1, maxWidth: 560 } }, "The official record of poor decisions. ", stats.sessionsPlayed, " sessions, ", stats.nat1s, " natural ones, and zero (0) total party kills \u2014 somehow."),
+        React.createElement("button", { className: "btn ghost", onClick: () => {
+          const text = recaps.map((r) => "=== Ep " + r.num + ": " + r.title + " (" + r.date + ") ===\n" + r.body + "\nTags: " + r.tags.join(", ") + "\n").join("\n");
+          const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = "nat-zeroes-recaps.txt"; a.click();
+        } }, React.createElement(Icon, { name: "upload", size: 16 }), "Export"),
         canEdit && React.createElement("button", { className: "btn primary", onClick: () => setEditing(false) },
           React.createElement(Icon, { name: "plus", size: 16 }), "New Recap")),
       React.createElement("div", { style: { position: "relative", paddingLeft: 28 } },

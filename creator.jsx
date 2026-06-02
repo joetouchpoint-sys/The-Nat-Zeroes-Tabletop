@@ -80,7 +80,18 @@
           : React.createElement("div", { ref: mountRef, style: { flex: 1, minHeight: 0 } }),
         React.createElement("div", { style: { position: "absolute", bottom: 78, left: "50%", transform: "translateX(-50%)", zIndex: 3, display: "flex", gap: 10 } },
           React.createElement("button", { className: "btn", onClick: randomize }, React.createElement(Icon, { name: "dice", size: 16 }), "Randomize"),
-          React.createElement("button", { className: "btn", onClick: () => viewerRef.current && viewerRef.current.resetView() }, React.createElement(Icon, { name: "settings", size: 16 }), "Reset view")),
+          React.createElement("button", { className: "btn", onClick: () => viewerRef.current && viewerRef.current.resetView() }, React.createElement(Icon, { name: "settings", size: 16 }), "Reset view"),
+          React.createElement("button", { className: "btn", onClick: () => {
+            if (!viewerRef.current) return;
+            const canvas = viewerRef.current.getCanvas && viewerRef.current.getCanvas();
+            const renderer = viewerRef.current._renderer;
+            const target = canvas || (renderer && renderer.domElement);
+            if (!target) return;
+            const a = document.createElement("a");
+            a.href = target.toDataURL("image/png");
+            a.download = (name || "avatar") + ".png";
+            a.click();
+          } }, React.createElement(Icon, { name: "upload", size: 16 }), "Save PNG")),
         React.createElement("div", { style: { borderTop: "1px solid var(--hair)", background: "rgba(13,10,20,0.7)", display: "flex", gap: 10, padding: 12, overflowX: "auto", alignItems: "center" } },
           roster.map((r) => React.createElement("button", { key: r.id, onClick: () => selectChar(r), style: rosterChip(r.id === activeId, r.ring) },
             React.createElement(window.NZUI.Token, { name: r.name, ring: r.ring, size: 30 }),

@@ -576,6 +576,7 @@
     return {
       update(cfg) { pivot.remove(figure); disposeObj(figure); figure = build(cfg); pivot.add(figure); },
       setSpin(v) { spin = v; }, resetView() { targetRotY = 0; dist = 4.4; },
+      getCanvas() { return renderer.domElement; },
       dispose() { cancelAnimationFrame(raf); ro.disconnect(); dom.removeEventListener("pointerdown", down); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); dom.removeEventListener("wheel", wheel); disposeObj(scene); renderer.dispose(); if (dom.parentNode) dom.parentNode.removeChild(dom); },
     };
   }

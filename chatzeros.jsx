@@ -279,6 +279,213 @@
           }, "💬 Save quote"))));
   }
 
+  // ---- Death memorial ----
+  function DeathsSection(props) {
+    var deaths = props.deaths || [];
+    var setDeaths = props.setDeaths;
+    var isDM = props.isDM;
+    var editState = useState(null);
+    var editing = editState[0], setEditing = editState[1];
+    function saveDeath(d) {
+      if (d.id) { setDeaths(function(ds) { return ds.map(function(x) { return x.id === d.id ? d : x; }); }); }
+      else { setDeaths(function(ds) { return ds.concat([Object.assign({}, d, { id: "d" + Date.now() })]); }); }
+      setEditing(null);
+    }
+    return React.createElement("div", { style: { marginTop: 40 } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 20 } },
+        React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 13, letterSpacing: "0.2em", color: "#888", textTransform: "uppercase" } }, "☠️ Deaths & Knockouts"),
+        React.createElement("div", { style: { flex: 1, height: 1, background: "#88888833" } }),
+        isDM && React.createElement("button", { onClick: function() { setEditing(false); }, style: czBtn("#888") }, React.createElement(Icon, { name: "plus", size: 14 }), " Add")),
+      deaths.length === 0 && React.createElement("div", { style: { textAlign: "center", padding: "30px 20px", color: CZ_MUTED, fontStyle: "italic", fontSize: 14 } }, "No deaths yet. A miracle."),
+      React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 } },
+        deaths.map(function(d) {
+          return React.createElement("div", { key: d.id, style: { background: CZ_SURFACE, borderRadius: 14, padding: 18, border: "1px solid #88888833", textAlign: "center", position: "relative" } },
+            isDM && React.createElement("div", { style: { position: "absolute", top: 8, right: 8, display: "flex", gap: 4 } },
+              React.createElement("button", { onClick: function() { setEditing(d); }, style: { background: "none", border: "none", color: CZ_MUTED, cursor: "pointer", fontSize: 13 } }, "✏️"),
+              React.createElement("button", { onClick: function() { setDeaths(function(ds) { return ds.filter(function(x) { return x.id !== d.id; }); }); }, style: { background: "none", border: "none", color: "#ff6060", cursor: "pointer", fontSize: 13 } }, "🗑️")),
+            React.createElement("div", { style: { fontSize: 36, marginBottom: 8 } }, d.dramatic ? "⚰️" : "💀"),
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 16, fontWeight: 700, color: CZ_INK } }, d.character),
+            React.createElement("div", { style: { fontSize: 12, color: CZ_MUTED, marginTop: 4 } }, d.player + (d.session ? " · Ep " + d.session : "")),
+            d.cause && React.createElement("div", { style: { fontSize: 13, color: CZ_INK, marginTop: 8, fontStyle: "italic" } }, ""' + d.cause + '""),
+            d.culprit && React.createElement("div", { style: { fontSize: 12, color: "#ff9090", marginTop: 4 } }, "Responsible: " + d.culprit));
+        })),
+      editing !== null && React.createElement(DeathModal, { open: true, initial: editing || null, onClose: function() { setEditing(null); }, onSave: saveDeath }));
+  }
+
+  function DeathModal(props) {
+    var open = props.open, initial = props.initial, onClose = props.onClose, onSave = props.onSave;
+    var charState = useState(initial ? initial.character : ""); var char = charState[0], setChar = charState[1];
+    var playerState = useState(initial ? initial.player : ""); var player = playerState[0], setPlayer = playerState[1];
+    var sessState = useState(initial ? initial.session : ""); var sess = sessState[0], setSess = sessState[1];
+    var causeState = useState(initial ? initial.cause : ""); var cause = causeState[0], setCause = causeState[1];
+    var culpritState = useState(initial ? initial.culprit : ""); var culprit = culpritState[0], setCulprit = culpritState[1];
+    var dramState = useState(initial ? !!initial.dramatic : false); var dramatic = dramState[0], setDramatic = dramState[1];
+    useEffect(function() { if (open) { setChar(initial ? initial.character : ""); setPlayer(initial ? initial.player : ""); setSess(initial ? initial.session : ""); setCause(initial ? initial.cause : ""); setCulprit(initial ? initial.culprit : ""); setDramatic(initial ? !!initial.dramatic : false); } }, [open]);
+    return React.createElement(Modal, { open: open, onClose: onClose, title: (initial && initial.id) ? "Edit Death" : "Record Death/KO", w: 460 },
+      React.createElement("div", { style: { padding: 20, display: "flex", flexDirection: "column", gap: 12 } },
+        React.createElement("div", { className: "row", style: { gap: 12 } },
+          React.createElement("div", { className: "field", style: { flex: 1 } }, React.createElement("label", null, "Character"), React.createElement("input", { className: "input", value: char, onChange: function(e) { setChar(e.target.value); }, placeholder: "Krunk the Considerate" })),
+          React.createElement("div", { className: "field", style: { flex: 1 } }, React.createElement("label", null, "Player"), React.createElement("input", { className: "input", value: player, onChange: function(e) { setPlayer(e.target.value); }, placeholder: "Milo" }))),
+        React.createElement("div", { className: "row", style: { gap: 12 } },
+          React.createElement("div", { className: "field", style: { flex: 1 } }, React.createElement("label", null, "Session"), React.createElement("input", { className: "input", value: sess, onChange: function(e) { setSess(e.target.value); }, placeholder: "12" })),
+          React.createElement("div", { className: "field", style: { flex: 1 } }, React.createElement("label", null, "Culprit"), React.createElement("input", { className: "input", value: culprit, onChange: function(e) { setCulprit(e.target.value); }, placeholder: "Who's fault?" }))),
+        React.createElement("div", { className: "field" }, React.createElement("label", null, "Cause of death"), React.createElement("input", { className: "input", value: cause, onChange: function(e) { setCause(e.target.value); }, placeholder: "Tax-related head trauma" })),
+        React.createElement("label", { className: "row", style: { gap: 8, cursor: "pointer" } }, React.createElement("input", { type: "checkbox", checked: dramatic, onChange: function(e) { setDramatic(e.target.checked); } }), "Dramatically cool death (⚰️) vs embarrassing (💀)"),
+        React.createElement("div", { className: "row", style: { justifyContent: "flex-end", gap: 10 } },
+          React.createElement("button", { className: "btn ghost", onClick: onClose }, "Cancel"),
+          React.createElement("button", { className: "btn primary", disabled: !char, onClick: function() { onSave(Object.assign({}, initial, { character: char, player: player, session: sess, cause: cause, culprit: culprit, dramatic: dramatic })); } }, "Save"))));
+  }
+
+  // ---- Predictions board ----
+  function PredictionsSection(props) {
+    var predictions = props.predictions || [];
+    var setPredictions = props.setPredictions;
+    var isDM = props.isDM;
+    var party = props.party;
+    var addState = useState(false); var addOpen = addState[0], setAddOpen = addState[1];
+    var textState = useState(""); var text = textState[0], setText = textState[1];
+    var authorState = useState(""); var author = authorState[0], setAuthor = authorState[1];
+    var sessState = useState(""); var sess = sessState[0], setSess = sessState[1];
+
+    var players = [];
+    if (party) { var seen = {}; party.forEach(function(p) { if (!seen[p.player]) { seen[p.player] = true; players.push(p.player); } }); }
+
+    function addPred() {
+      if (!text.trim() || !author) return;
+      setPredictions(function(ps) { return ps.concat([{ id: "pr" + Date.now(), text: text, author: author, session: sess, result: null }]); });
+      setText(""); setAddOpen(false);
+    }
+    function score(id, result) { setPredictions(function(ps) { return ps.map(function(p) { return p.id === id ? Object.assign({}, p, { result: result }) : p; }); }); }
+    function del(id) { setPredictions(function(ps) { return ps.filter(function(p) { return p.id !== id; }); }); }
+
+    var resultColors = { correct: CZ_TEAL, wrong: "#ff6060", partial: CZ_GOLD };
+    var resultEmoji = { correct: "✅", wrong: "❌", partial: "🟡" };
+
+    // Leaderboard
+    var tally = {};
+    predictions.forEach(function(p) {
+      if (!tally[p.author]) tally[p.author] = { correct: 0, wrong: 0, partial: 0 };
+      if (p.result) tally[p.author][p.result] = (tally[p.author][p.result] || 0) + 1;
+    });
+    var leaders = Object.entries(tally).sort(function(a, b) { return (b[1].correct * 3 + b[1].partial) - (a[1].correct * 3 + a[1].partial); });
+
+    return React.createElement("div", { style: { marginTop: 40 } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
+        React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 13, letterSpacing: "0.2em", color: CZ_TEAL, textTransform: "uppercase" } }, "🎯 Session Predictions"),
+        React.createElement("div", { style: { flex: 1, height: 1, background: CZ_TEAL + "33" } }),
+        React.createElement("button", { onClick: function() { setAddOpen(true); }, style: czBtn(CZ_TEAL) }, React.createElement(Icon, { name: "plus", size: 14 }), " Add prediction")),
+      addOpen && React.createElement("div", { style: { background: CZ_SURFACE, borderRadius: 12, padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 } },
+        React.createElement("textarea", { className: "input", rows: 2, value: text, onChange: function(e) { setText(e.target.value); }, placeholder: '"Krunk will rage at least once and apologise immediately after"', style: { resize: "none" }, autoFocus: true }),
+        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+          React.createElement("input", { className: "input", placeholder: "Session #", value: sess, onChange: function(e) { setSess(e.target.value); }, style: { width: 100 } }),
+          React.createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+            ["Callum (DM)"].concat(players).map(function(p) {
+              return React.createElement("button", { key: p, onClick: function() { setAuthor(p); },
+                style: { padding: "6px 12px", borderRadius: 100, cursor: "pointer", fontSize: 13, border: "1px solid " + (author === p ? CZ_TEAL : "var(--hair)"), background: author === p ? CZ_TEAL + "22" : "var(--surface-2)", color: author === p ? CZ_TEAL : "var(--ink-dim)" } }, p);
+            })),
+          React.createElement("button", { className: "btn primary sm", onClick: addPred, disabled: !text.trim() || !author }, "Add"),
+          React.createElement("button", { className: "btn ghost sm", onClick: function() { setAddOpen(false); } }, "Cancel"))),
+      React.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, alignItems: "start" } },
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+          predictions.length === 0 && React.createElement("div", { style: { color: CZ_MUTED, fontStyle: "italic", fontSize: 14, padding: "20px 0" } }, "No predictions yet."),
+          predictions.map(function(p) {
+            return React.createElement("div", { key: p.id, style: { background: CZ_SURFACE, borderRadius: 12, padding: 14, border: "1px solid " + (p.result ? resultColors[p.result] + "55" : "var(--hair)") } },
+              React.createElement("div", { style: { display: "flex", alignItems: "flex-start", gap: 10 } },
+                React.createElement("div", { style: { flex: 1, fontSize: 14, color: CZ_INK, lineHeight: 1.5 } }, p.text),
+                p.result && React.createElement("span", { style: { fontSize: 20 } }, resultEmoji[p.result])),
+              React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } },
+                React.createElement("span", { style: { fontSize: 12, color: CZ_POP, fontWeight: 600 } }, p.author),
+                p.session && React.createElement("span", { style: { fontSize: 12, color: CZ_MUTED } }, "· Ep " + p.session),
+                React.createElement("div", { style: { flex: 1 } }),
+                isDM && !p.result && React.createElement("div", { style: { display: "flex", gap: 4 } },
+                  ["correct","partial","wrong"].map(function(r) {
+                    return React.createElement("button", { key: r, onClick: function() { score(p.id, r); }, style: { fontSize: 14, padding: "2px 6px", cursor: "pointer", border: "1px solid var(--hair)", background: "var(--surface-3)", borderRadius: 6 } }, resultEmoji[r]);
+                  })),
+                isDM && React.createElement("button", { onClick: function() { del(p.id); }, style: { background: "none", border: "none", color: "#ff6060", cursor: "pointer", fontSize: 13 } }, "✕")));
+          })),
+        leaders.length > 0 && React.createElement("div", { style: { background: CZ_SURFACE, borderRadius: 14, padding: 16 } },
+          React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 11, letterSpacing: "0.2em", color: CZ_GOLD, marginBottom: 12 } }, "LEADERBOARD"),
+          leaders.map(function(entry, i) {
+            var p = entry[0], counts = entry[1];
+            return React.createElement("div", { key: p, style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13 } },
+              React.createElement("span", { style: { color: i === 0 ? CZ_GOLD : CZ_MUTED, minWidth: 20 } }, i === 0 ? "🥇" : i === 1 ? "🥈" : i + 1 + "."),
+              React.createElement("span", { style: { flex: 1, color: CZ_INK } }, p),
+              React.createElement("span", { style: { color: CZ_TEAL, fontFamily: "var(--mono)", fontWeight: 700 } }, counts.correct + "✓"));
+          }))));
+  }
+
+  // ---- Running gags ----
+  function GagsSection(props) {
+    var gags = props.gags || [];
+    var setGags = props.setGags;
+    var isDM = props.isDM;
+    var addState = useState(false); var addOpen = addState[0], setAddOpen = addState[1];
+    var textState = useState(""); var text = textState[0], setText = textState[1];
+
+    function addGag() {
+      if (!text.trim()) return;
+      setGags(function(gs) { return gs.concat([{ id: "g" + Date.now(), text: text, count: 0 }]); });
+      setText(""); setAddOpen(false);
+    }
+    function increment(id) { setGags(function(gs) { return gs.map(function(g) { return g.id === id ? Object.assign({}, g, { count: g.count + 1 }) : g; }); }); }
+
+    var sorted = gags.slice().sort(function(a, b) { return b.count - a.count; });
+
+    return React.createElement("div", { style: { marginTop: 40 } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
+        React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 13, letterSpacing: "0.2em", color: CZ_POP, textTransform: "uppercase" } }, "🎭 Running Gags"),
+        React.createElement("div", { style: { flex: 1, height: 1, background: CZ_POP + "33" } }),
+        isDM && React.createElement("button", { onClick: function() { setAddOpen(true); }, style: czBtn(CZ_POP) }, React.createElement(Icon, { name: "plus", size: 14 }), " New gag")),
+      addOpen && isDM && React.createElement("div", { style: { display: "flex", gap: 8, marginBottom: 14 } },
+        React.createElement("input", { className: "input", value: text, onChange: function(e) { setText(e.target.value); }, placeholder: '"Krunk apologises mid-rage"', style: { flex: 1 }, autoFocus: true, onKeyDown: function(e) { if (e.key === "Enter") addGag(); } }),
+        React.createElement("button", { className: "btn primary sm", onClick: addGag }, "Add"),
+        React.createElement("button", { className: "btn ghost sm", onClick: function() { setAddOpen(false); } }, "✕")),
+      sorted.length === 0 && React.createElement("div", { style: { color: CZ_MUTED, fontStyle: "italic", fontSize: 14, padding: "20px 0" } }, "No running gags yet."),
+      React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 } },
+        sorted.map(function(g) {
+          return React.createElement("div", { key: g.id, style: { background: CZ_SURFACE, borderRadius: 14, padding: 18, border: "1px solid " + CZ_POP + "22", position: "relative" } },
+            isDM && React.createElement("button", { onClick: function() { setGags(function(gs) { return gs.filter(function(x) { return x.id !== g.id; }); }); }, style: { position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "#ff6060", cursor: "pointer", fontSize: 13 } }, "🗑️"),
+            React.createElement("div", { style: { fontFamily: "var(--mono)", fontSize: 48, fontWeight: 900, color: CZ_POP, lineHeight: 1, marginBottom: 8 } }, g.count),
+            React.createElement("div", { style: { fontSize: 13.5, color: CZ_INK, marginBottom: 14, lineHeight: 1.4 } }, g.text),
+            React.createElement("button", { onClick: function() { increment(g.id); }, style: { width: "100%", padding: "10px 0", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700, border: "1px solid " + CZ_POP + "55", background: CZ_POP + "15", color: CZ_POP } }, "▲ Count it!"));
+        })));
+  }
+
+  // ---- Shoutouts / listener questions ----
+  function ShoutoutsSection(props) {
+    var shoutouts = props.shoutouts || [];
+    var setShoutouts = props.setShoutouts;
+    var isDM = props.isDM;
+    var addState = useState(false); var addOpen = addState[0], setAddOpen = addState[1];
+    var textState = useState(""); var text = textState[0], setText = textState[1];
+
+    function add() {
+      if (!text.trim()) return;
+      setShoutouts(function(ss) { return ss.concat([{ id: "s" + Date.now(), text: text, answered: false }]); });
+      setText(""); setAddOpen(false);
+    }
+    function toggle(id) { setShoutouts(function(ss) { return ss.map(function(s) { return s.id === id ? Object.assign({}, s, { answered: !s.answered }) : s; }); }); }
+    function del(id) { setShoutouts(function(ss) { return ss.filter(function(s) { return s.id !== id; }); }); }
+
+    return React.createElement("div", { style: { marginTop: 40, marginBottom: 40 } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
+        React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 13, letterSpacing: "0.2em", color: CZ_TEAL, textTransform: "uppercase" } }, "📣 Listener Shoutouts & Questions"),
+        React.createElement("div", { style: { flex: 1, height: 1, background: CZ_TEAL + "33" } }),
+        isDM && React.createElement("button", { onClick: function() { setAddOpen(true); }, style: czBtn(CZ_TEAL) }, React.createElement(Icon, { name: "plus", size: 14 }), " Add")),
+      addOpen && isDM && React.createElement("div", { style: { display: "flex", gap: 8, marginBottom: 14 } },
+        React.createElement("input", { className: "input", value: text, onChange: function(e) { setText(e.target.value); }, placeholder: "Listener question or shoutout...", style: { flex: 1 }, autoFocus: true, onKeyDown: function(e) { if (e.key === "Enter") add(); } }),
+        React.createElement("button", { className: "btn primary sm", onClick: add }, "Add"),
+        React.createElement("button", { className: "btn ghost sm", onClick: function() { setAddOpen(false); } }, "✕")),
+      shoutouts.length === 0 && React.createElement("div", { style: { color: CZ_MUTED, fontStyle: "italic", fontSize: 14 } }, "Nothing to shout out yet."),
+      React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+        shoutouts.map(function(s) {
+          return React.createElement("div", { key: s.id, style: { display: "flex", alignItems: "center", gap: 12, background: CZ_SURFACE, borderRadius: 10, padding: "12px 16px", opacity: s.answered ? 0.5 : 1 } },
+            React.createElement("button", { onClick: function() { toggle(s.id); }, style: { width: 24, height: 24, borderRadius: "50%", border: "2px solid " + (s.answered ? CZ_TEAL : "var(--hair)"), background: s.answered ? CZ_TEAL : "transparent", cursor: "pointer", flex: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14 } }, s.answered ? "✓" : ""),
+            React.createElement("span", { style: { flex: 1, fontSize: 14, color: CZ_INK, textDecoration: s.answered ? "line-through" : "none" } }, s.text),
+            isDM && React.createElement("button", { onClick: function() { del(s.id); }, style: { background: "none", border: "none", color: "#ff6060", cursor: "pointer", fontSize: 14 } }, "✕"));
+        })));
+  }
+
   // ---- Main component ----
   function ChatZeroes(props) {
     var chatStats = props.chatStats;
@@ -287,6 +494,14 @@
     var setAwards = props.setAwards;
     var quotes = props.quotes || [];
     var setQuotes = props.setQuotes;
+    var deaths = props.deaths || [];
+    var setDeaths = props.setDeaths;
+    var predictions = props.predictions || [];
+    var setPredictions = props.setPredictions;
+    var gags = props.gags || [];
+    var setGags = props.setGags;
+    var shoutouts = props.shoutouts || [];
+    var setShoutouts = props.setShoutouts;
     var party = props.party;
 
     var ctx = useContext(window.NZAuth.RoleContext);
@@ -427,6 +642,11 @@
                       React.createElement("span", { style: { color: CZ_POP, fontWeight: 700, fontSize: 13 } }, "— " + (q.speaker || "Unknown")),
                       q.session && React.createElement("span", { style: { color: CZ_MUTED, fontSize: 12 } }, q.session)));
                 }))),
+
+        React.createElement(DeathsSection, { deaths: deaths, setDeaths: setDeaths, isDM: isDM }),
+        React.createElement(PredictionsSection, { predictions: predictions, setPredictions: setPredictions, isDM: isDM, party: party }),
+        React.createElement(GagsSection, { gags: gags, setGags: setGags, isDM: isDM }),
+        React.createElement(ShoutoutsSection, { shoutouts: shoutouts, setShoutouts: setShoutouts, isDM: isDM }),
 
         React.createElement(StatModal, {
           open: statEdit !== null, initial: statEdit || null,
