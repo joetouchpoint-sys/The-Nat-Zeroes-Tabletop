@@ -74,7 +74,7 @@
       React.createElement("div", { style: { padding: "0 18px" } }, React.createElement(HPBar, { hp: p.hp, max: p.hpMax })),
       React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, padding: 18 } },
         mini("AC", p.ac, "shield"), mini("Init", (p.init >= 0 ? "+" : "") + p.init, "swords"), mini("Speed", p.speed, "move"), mini("Pass", p.passive, "eye")),
-      React.createElement("p", { style: { margin: "0 18px 16px", fontSize: 13, fontStyle: "italic", color: "var(--ink-dim)", lineHeight: 1.5 } }, "“" + p.blurb + "”"),
+      React.createElement("p", { style: { margin: "0 18px 16px", fontSize: 13, fontStyle: "italic", color: "var(--ink-dim)", lineHeight: 1.5 } }, ““” + p.blurb + “””),
       // D&D Beyond link row
       editingLink
         ? React.createElement("div", { style: { padding: "0 18px 14px", display: "flex", gap: 6 } },
@@ -145,7 +145,7 @@
         React.createElement(StatGrid, { stats: p.stats }),
         React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 } },
           mini("AC", p.ac, "shield"), mini("Init", (p.init >= 0 ? "+" : "") + p.init, "swords"), mini("Speed", p.speed + "ft", "move"), mini("Passive", p.passive, "eye")),
-        React.createElement("p", { style: { margin: 0, fontStyle: "italic", color: "var(--ink-soft)", lineHeight: 1.5 } }, "“" + p.blurb + "”"),
+        React.createElement("p", { style: { margin: 0, fontStyle: "italic", color: "var(--ink-soft)", lineHeight: 1.5 } }, ““” + p.blurb + “””),
         dndbUrl && React.createElement("a", { className: "btn primary", href: dndbUrl, target: "_blank", rel: "noopener", style: { justifyContent: "center", textDecoration: "none" } },
           React.createElement(Icon, { name: "link", size: 16 }), "Open full sheet on D&D Beyond"))
     );

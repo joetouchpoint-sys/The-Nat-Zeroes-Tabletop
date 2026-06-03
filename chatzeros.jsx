@@ -306,7 +306,7 @@
             React.createElement("div", { style: { fontSize: 36, marginBottom: 8 } }, d.dramatic ? "⚰️" : "💀"),
             React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 16, fontWeight: 700, color: CZ_INK } }, d.character),
             React.createElement("div", { style: { fontSize: 12, color: CZ_MUTED, marginTop: 4 } }, d.player + (d.session ? " · Ep " + d.session : "")),
-            d.cause && React.createElement("div", { style: { fontSize: 13, color: CZ_INK, marginTop: 8, fontStyle: "italic" } }, ""' + d.cause + '""),
+            d.cause && React.createElement(“div”, { style: { fontSize: 13, color: CZ_INK, marginTop: 8, fontStyle: “italic” } }, ““” + d.cause + “””),
             d.culprit && React.createElement("div", { style: { fontSize: 12, color: "#ff9090", marginTop: 4 } }, "Responsible: " + d.culprit));
         })),
       editing !== null && React.createElement(DeathModal, { open: true, initial: editing || null, onClose: function() { setEditing(null); }, onSave: saveDeath }));
@@ -636,7 +636,7 @@
                         style: { background: "none", border: "none", color: CZ_MUTED, cursor: "pointer", fontSize: 14 } }, "✏️"),
                       React.createElement("button", { onClick: function() { deleteQuote(q.id); },
                         style: { background: "none", border: "none", color: "#ff6060", cursor: "pointer", fontSize: 14 } }, "🗑️")),
-                    React.createElement("div", { style: { fontSize: 28, color: CZ_GOLD + "55", marginBottom: 6, fontFamily: "Georgia, serif", lineHeight: 1 } }, "“"),
+                    React.createElement(“div”, { style: { fontSize: 28, color: CZ_GOLD + “55”, marginBottom: 6, fontFamily: “Georgia, serif”, lineHeight: 1 } }, ““”),
                     React.createElement("div", { style: { fontSize: 14.5, color: CZ_INK, lineHeight: 1.55, fontStyle: "italic", marginBottom: 12 } }, q.text),
                     React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
                       React.createElement("span", { style: { color: CZ_POP, fontWeight: 700, fontSize: 13 } }, "— " + (q.speaker || "Unknown")),
