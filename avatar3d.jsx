@@ -128,9 +128,10 @@
     const legMat = c.outfit === "robe" ? cloth(c.secondary) : smat(shade(c.primary, -0.12), { roughness: 0.7 });
     if (c.outfit !== "robe") {
       [-1, 1].forEach((s) => {
-        add(limb(0.13 * bw, 0.5, legMat), s * 0.15 * bw, 0.55, 0);
-        add(limb(0.115 * bw, 0.42, skinMat.clone()), s * 0.15 * bw, 0.22, 0.01);
-        const boot = add(sphere(0.15 * bw, bootMat), s * 0.15 * bw, 0.14, 0.04); boot.scale.set(1, 0.8, 1.5);
+        add(limb(0.13 * bw, 0.46, legMat), s * 0.15 * bw, 0.56, 0);
+        // Shin shortened so it doesn't poke below the boot
+        add(limb(0.105 * bw, 0.28, skinMat.clone()), s * 0.15 * bw, 0.27, 0.01);
+        const boot = add(sphere(0.15 * bw, bootMat), s * 0.15 * bw, 0.15, 0.045); boot.scale.set(1, 0.85, 1.5);
       });
     }
 
@@ -201,48 +202,53 @@
       );
     });
 
-    // ---- neck + head ----
-    add(limb(0.075, 0.1, skinMat.clone()), 0, 1.58, 0);
-    const headR = 0.2 * headScale;
-    const head = add(sphere(headR, skinMat.clone(), 40), 0, 1.78, 0); head.scale.set(0.96, 1.04, 0.96); head.name = "headMesh";
-    if (isDragon) { const snout = add(sphere(headR * 0.6, smat(c.skin), 18), 0, 1.74, headR * 0.8); snout.scale.set(0.8, 0.6, 1.1); }
-    // ears
-    if (c.race === "elf" || c.race === "halfelf") [-1, 1].forEach((s) => { const e = add(new T.Mesh(new T.ConeGeometry(0.045, 0.16, 10), skinMat.clone()), s * headR * 0.95, 1.84, -0.02); e.rotation.z = s * -0.6; e.rotation.x = -0.3; });
-    else [-1, 1].forEach((s) => { const e = add(sphere(0.05, skinMat.clone(), 12), s * headR * 0.98, 1.78, 0); e.scale.set(0.5, 1, 0.7); });
+    // ---- neck + head — everything head-related in a Group so head tilt moves it all ----
+    add(limb(0.075, 0.1, skinMat.clone()), 0, 1.58, 0); // neck stays on body
 
-    // eyes — larger, more expressive
+    const headGroup = new T.Group();
+    headGroup.position.set(0, 1.65, 0); // pivot at neck-top
+    g.add(headGroup);
+
+    // addH: helper that places meshes in headGroup using WORLD y coords (converts to local)
+    const HY = 1.65; // headGroup world y
+    const addH = (m, x, y, z) => {
+      const ly = (y !== undefined) ? y - HY : 0;
+      if (x !== undefined) m.position.set(x || 0, ly, z || 0);
+      m.castShadow = true; headGroup.add(m); return m;
+    };
+
+    const headR = 0.2 * headScale;
+    const head = addH(sphere(headR, skinMat.clone(), 40), 0, 1.78, 0); head.scale.set(0.96, 1.04, 0.96); head.name = "headMesh";
+    if (isDragon) { const snout = addH(sphere(headR * 0.6, smat(c.skin), 18), 0, 1.74, headR * 0.8); snout.scale.set(0.8, 0.6, 1.1); }
+    // ears
+    if (c.race === "elf" || c.race === "halfelf") [-1, 1].forEach((s) => { const e = addH(new T.Mesh(new T.ConeGeometry(0.045, 0.16, 10), skinMat.clone()), s * headR * 0.95, 1.84, -0.02); e.rotation.z = s * -0.6; e.rotation.x = -0.3; });
+    else [-1, 1].forEach((s) => { const e = addH(sphere(0.05, skinMat.clone(), 12), s * headR * 0.98, 1.78, 0); e.scale.set(0.5, 1, 0.7); });
+
+    // eyes
     [-1, 1].forEach((s) => {
-      const white = add(sphere(0.062, smat("#f8f4f0"), 20), s * 0.076, 1.798, headR * 1.08); white.scale.set(1, 1.22, 0.58);
-      add(sphere(0.040, smat(c.eyeColor, { roughness: 0.18, metalness: 0.05 }), 20), s * 0.076, 1.791, headR * 1.13);
-      add(sphere(0.022, smat("#080604"), 14), s * 0.076, 1.792, headR * 1.17);
-      // two catchlights for depth
-      add(sphere(0.009, smat("#ffffff", { roughness: 0.05 }), 8), s * 0.083, 1.800, headR * 1.19);
-      add(sphere(0.005, smat("#ffffff", { roughness: 0.05 }), 6), s * 0.070, 1.796, headR * 1.19);
+      const white = addH(sphere(0.062, smat("#f8f4f0"), 20), s * 0.076, 1.798, headR * 1.08); white.scale.set(1, 1.22, 0.58);
+      addH(sphere(0.040, smat(c.eyeColor, { roughness: 0.18, metalness: 0.05 }), 20), s * 0.076, 1.791, headR * 1.13);
+      addH(sphere(0.022, smat("#080604"), 14), s * 0.076, 1.792, headR * 1.17);
+      addH(sphere(0.009, smat("#ffffff", { roughness: 0.05 }), 8), s * 0.083, 1.800, headR * 1.19);
+      addH(sphere(0.005, smat("#ffffff", { roughness: 0.05 }), 6), s * 0.070, 1.796, headR * 1.19);
       if (c.brows) {
-        const b = add(new T.Mesh(new T.BoxGeometry(0.082, 0.022, 0.030), hairMat), s * 0.076, 1.868, headR * 1.10);
+        const b = addH(new T.Mesh(new T.BoxGeometry(0.082, 0.022, 0.030), hairMat), s * 0.076, 1.868, headR * 1.10);
         b.rotation.z = s * -0.14;
       }
     });
     // nose + mouth
-    const nose = add(sphere(0.026, skinMat.clone(), 18), 0, 1.757, headR * 1.14); nose.scale.set(0.85, 0.78, 0.9);
-    [-1, 1].forEach((s) => { const n = add(sphere(0.012, smat(shade(c.skin, -0.07)), 10), s * 0.021, 1.744, headR * 1.15); n.scale.set(1, 0.65, 0.75); });
-    // upper lip — two small flattened spheres side-by-side
-    [-1, 1].forEach((s) => { const ul = add(sphere(0.022, smat("#9a5050"), 14), s * 0.025, 1.706, headR * 1.13); ul.scale.set(0.9, 0.38, 0.55); });
-    // lower lip — single wider flattened sphere
-    const ll = add(sphere(0.028, smat(shade(c.skin, -0.04)), 14), 0, 1.692, headR * 1.125); ll.scale.set(1.55, 0.42, 0.6);
+    const nose = addH(sphere(0.026, skinMat.clone(), 18), 0, 1.757, headR * 1.14); nose.scale.set(0.85, 0.78, 0.9);
+    [-1, 1].forEach((s) => { const n = addH(sphere(0.012, smat(shade(c.skin, -0.07)), 10), s * 0.021, 1.744, headR * 1.15); n.scale.set(1, 0.65, 0.75); });
+    [-1, 1].forEach((s) => { const ul = addH(sphere(0.022, smat("#9a5050"), 14), s * 0.025, 1.706, headR * 1.13); ul.scale.set(0.9, 0.38, 0.55); });
+    const ll = addH(sphere(0.028, smat(shade(c.skin, -0.04)), 14), 0, 1.692, headR * 1.125); ll.scale.set(1.55, 0.42, 0.6);
+    if (c.race === "halforc") [-1, 1].forEach((s) => { const t = addH(new T.Mesh(new T.ConeGeometry(0.024, 0.1, 8), smat("#efe9d6")), s * 0.05, 1.7, headR * 1.0); t.rotation.x = 0.25; t.rotation.z = Math.PI; });
 
-    // tusks for half-orc
-    if (c.race === "halforc") [-1, 1].forEach((s) => { const t = add(new T.Mesh(new T.ConeGeometry(0.024, 0.1, 8), smat("#efe9d6")), s * 0.05, 1.7, headR * 1.0); t.rotation.x = 0.25; t.rotation.z = Math.PI; });
-
-    // ---- facial hair ----
-    buildBeard(add, c, headR, beardMat);
-    // ---- hair ----
-    buildHair(add, c, headR, hairMat);
-    // ---- horns ----
+    // ---- facial hair, hair, horns, headgear — all in headGroup via addH ----
+    buildBeard(addH, c, headR, beardMat);
+    buildHair(addH, c, headR, hairMat);
     let horns = c.horns; if ((c.race === "tiefling" || isDragon) && horns === "none") horns = "curved";
-    buildHorns(add, horns, headR, smat("#2a2228", { roughness: 0.5 }), trimMat);
-    // ---- headgear ----
-    buildHeadgear(add, c.headgear, headR, secMat, primMat, trimMat, hairMat);
+    buildHorns(addH, horns, headR, smat("#2a2228", { roughness: 0.5 }), trimMat);
+    buildHeadgear(addH, c.headgear, headR, secMat, primMat, trimMat, hairMat);
 
     // ---- cape ----
     buildCape(g, c, bw);
@@ -257,7 +263,7 @@
 
     g.scale.setScalar(raceScale * (c.height || 1));
     // Apply pose overrides
-    if (c.poseHeadTilt) g.traverse((m) => { if (m.name === "headMesh") m.rotation.z = (c.poseHeadTilt || 0) * 0.55; });
+    headGroup.rotation.z = (c.poseHeadTilt || 0) * 0.55; // tilt whole head group (hair+headgear+all)
     if (c.poseBodyLean) g.rotation.x = (c.poseBodyLean || 0) * 0.3;
     g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     return g;
@@ -448,7 +454,7 @@
     opts = opts || {};
     const w = container.clientWidth || 360, h = container.clientHeight || 460;
     const scene = new T.Scene();
-    const renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new T.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(w, h); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.outputEncoding = T.sRGBEncoding;

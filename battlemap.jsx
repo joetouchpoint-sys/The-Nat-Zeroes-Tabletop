@@ -120,7 +120,7 @@
         [maps[1].id]: reveal(maps[1].cols, maps[1].rows, 2, 9, 5, 12),
       };
     });
-    const [fogEnabled, setFogEnabled] = useState(true);
+    const [fogEnabled, setFogEnabled] = useState(false); // default OFF — DM enables manually
     const revealed = fogByMap[activeMapId] || new Set();
     const setRevealed = (next) => setFogByMap((s) => ({ ...s, [activeMapId]: next }));
 
@@ -462,7 +462,7 @@
     const stageW = map.cols * cell, stageH = map.rows * cell;
     const sel = tokens.find((t) => t.uid === selected);
 
-    return React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 312px", gridTemplateRows: "1fr auto", height: "100%", minHeight: 0 } },
+    return React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 312px", gridTemplateRows: "1fr auto", height: "100%", minHeight: 0, overflow: "hidden" } },
       // ===== LEFT: stage area =====
       React.createElement("div", { style: { position: "relative", minWidth: 0, display: "flex", flexDirection: "column", background: "#0d0a14" } },
         // map tabs
@@ -510,8 +510,8 @@
         ),
         // toolbar + viewport
         React.createElement("div", { style: { position: "relative", flex: 1, minHeight: 0, overflow: "hidden" } },
-          // floating toolbar
-          !view3d && canMove && React.createElement(Toolbar, { tool, setTool, cell, setCell, showGrid, setShowGrid, fogEnabled, setFogEnabled, canEdit,
+          // floating toolbar \u2014 always shown (limited tools in 3D mode)
+          canMove && React.createElement(Toolbar, { tool, setTool, cell, setCell, showGrid, setShowGrid, fogEnabled, setFogEnabled, canEdit, view3d,
             onReveal: () => { const all = new Set(); for (let c = 0; c < map.cols; c++) for (let r = 0; r < map.rows; r++) all.add(`${c},${r}`); setRevealed(all); },
             onResetFog: () => setRevealed(new Set()), onAdd: () => setAddOpen(true),
             placingObj, setPlacingObj, placingAoe, setPlacingAoe,
@@ -519,7 +519,7 @@
           // 3D board
           view3d && React.createElement(window.Table3D, { map, tokens, party, bestiary, activeUid, hexMode, mapObjs,
             onMoveToken: canMove ? (uid, c, r) => setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(c, 0, map.cols - 1), r: clamp(r, 0, map.rows - 1) } : t)) : null }),
-          view3d && React.createElement("div", { style: { position: "absolute", top: 14, left: 16, zIndex: 12, fontSize: 12, color: "var(--ink-dim)", background: "rgba(13,10,20,0.7)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 12px", backdropFilter: "blur(6px)" } }, "Orbit: drag \u00b7 Zoom: scroll \u00b7 Move token: click figure then click destination"),
+          view3d && React.createElement("div", { style: { position: "absolute", top: 14, left: 64, zIndex: 12, fontSize: 12, color: "var(--ink-dim)", background: "rgba(13,10,20,0.7)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 12px", backdropFilter: "blur(6px)" } }, "Orbit: drag \u00b7 Zoom: scroll \u00b7 Hold figure to drag"),
           // map note
           React.createElement("div", { style: { position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 12, background: "rgba(13,10,20,0.8)", border: "1px solid var(--hair)", borderRadius: 100, padding: "6px 16px", fontSize: 13, color: "var(--ink-soft)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", gap: 8 } },
             React.createElement("span", { style: { color: "var(--gold)", fontFamily: "var(--display)" } }, "\u2727"),
@@ -722,7 +722,7 @@
   ];
 
   // ---------- Toolbar ----------
-  function Toolbar({ tool, setTool, cell, setCell, showGrid, setShowGrid, fogEnabled, setFogEnabled, onReveal, onResetFog, onAdd, canEdit, placingObj, setPlacingObj, placingAoe, setPlacingAoe, onClearAoe, onClearObjects }) {
+  function Toolbar({ tool, setTool, cell, setCell, showGrid, setShowGrid, fogEnabled, setFogEnabled, onReveal, onResetFog, onAdd, canEdit, view3d, placingObj, setPlacingObj, placingAoe, setPlacingAoe, onClearAoe, onClearObjects }) {
     const [showObjects, setShowObjects] = useState(false);
     const [showAoe, setShowAoe] = useState(false);
     const tools = [
@@ -732,9 +732,9 @@
       { id: "ping", icon: "ping", label: "Ping location" },
     ].filter((t) => canEdit || !t.dm);
     return React.createElement("div", { style: { position: "absolute", top: 14, left: 14, zIndex: 14, display: "flex", flexDirection: "column", gap: 8 } },
-      // Standard tools
+      // Standard tools (in 2D: full set; in 3D: just add-token)
       React.createElement("div", { className: "panel", style: { padding: 6, display: "flex", flexDirection: "column", gap: 4, background: "rgba(24,18,34,0.92)", backdropFilter: "blur(8px)" } },
-        tools.map((t) => React.createElement("button", { key: t.id, title: t.label, onClick: () => { setTool(t.id); setShowObjects(false); setShowAoe(false); }, style: toolBtn(tool === t.id) },
+        !view3d && tools.map((t) => React.createElement("button", { key: t.id, title: t.label, onClick: () => { setTool(t.id); setShowObjects(false); setShowAoe(false); }, style: toolBtn(tool === t.id) },
           React.createElement(Icon, { name: t.icon, size: 19 }))),
         canEdit && React.createElement("div", { style: { height: 1, background: "var(--hair)", margin: "2px 4px" } }),
         canEdit && React.createElement("button", { title: "Add token", onClick: onAdd, style: toolBtn(false) }, React.createElement(Icon, { name: "plus", size: 19 })),
