@@ -1,4 +1,4 @@
-/* CREW & LORE — Party, NPCs, and Compendium merged into one tab */
+﻿/* CREW & LORE — Party, NPCs, and Compendium merged into one tab */
 (function () {
   const { useState, useContext } = React;
   const Icon = window.Icon;
@@ -227,7 +227,7 @@
         React.createElement("div", { className: "row", style: { gap: 10, justifyContent: "flex-end" } },
           isDM && React.createElement("button", { className: "btn ghost", onClick: onEdit }, React.createElement(Icon, { name: "settings", size: 14 }), "Edit"),
           React.createElement("button", { className: "btn primary", onClick: () => { window.dispatchEvent(new CustomEvent("nz:addtoken", { detail: e })); onClose(); } },
-            React.createElement(Icon, { name: "plus", size: 15 }), "Add to map")))));
+            React.createElement(Icon, { name: "plus", size: 15 }), "Add to map"))));
   }
 
   function NpcModal(props) {
