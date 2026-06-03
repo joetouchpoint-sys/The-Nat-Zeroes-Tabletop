@@ -144,6 +144,21 @@
     const [prep, setPrep] = useState(() => lsGet("nz_prep", ["Place tokens","Set fog","Prep encounter","Cue music","Check initiative"].map((t, i) => ({ id: i, text: t, done: false }))));
     const [soundUrl, setSoundUrl] = useState("");
     const [soundOpen, setSoundOpen] = useState(false);
+    // ---- Map objects (walls, pillars, etc.) ----
+    const [objectsByMap, setObjectsByMap] = useState(() => lsGet("nz_objects", {}));
+    const [placingObj, setPlacingObj] = useState(null); // { type, w, h, color } while placing
+    useEffect(() => { lsSet("nz_objects", objectsByMap); }, [objectsByMap]);
+    const mapObjs = objectsByMap[activeMapId] || [];
+    const setMapObjs = (updater) => setObjectsByMap((s) => ({ ...s, [activeMapId]: typeof updater === "function" ? updater(s[activeMapId] || []) : updater }));
+
+    // ---- AoE templates ----
+    const [aoeList, setAoeList] = useState([]); // per-session only (not persisted)
+    const [placingAoe, setPlacingAoe] = useState(null); // { type, size, color }
+
+    // ---- Session features: death saves, inspiration ----
+    const [deathSaves, setDeathSaves] = useState({}); // { uid: { s: [f,f,f], f: [f,f,f] } }
+    const [inspired, setInspired] = useState({}); // { uid: bool }
+    const [tokenNotes, setTokenNotes] = useState({}); // { uid: string }
     const [roomCode, setRoomCode] = useState(null);  // null = not in a room
     const [roomInput, setRoomInput] = useState("");
     const [roomOpen, setRoomOpen] = useState(false);
@@ -258,13 +273,23 @@
 
     function onStagePointerDown(e) {
       try {
-        if (e.target.closest(".tok")) return;
+        if (e.target.closest(".tok") || e.target.closest(".map-obj")) return;
         if (!stageRef.current) return;
         const pos = cellFromEvent(e);
+        // Object placement mode
+        if (tool === "object" && placingObj && canEdit) {
+          setMapObjs((os) => [...os, { id: "o" + Date.now(), ...placingObj, c: pos.c, r: pos.r }]);
+          return;
+        }
+        // AoE placement mode
+        if (tool === "aoe" && placingAoe && canEdit) {
+          setAoeList((as) => [...as, { id: "a" + Date.now(), ...placingAoe, c: pos.c, r: pos.r }]);
+          return;
+        }
         if (tool === "fog") { paintFog(pos, e.shiftKey); }
         else if (tool === "ping") { dropPing(pos); }
         else if (tool === "measure") { setMeasure({ from: { x: pos.x, y: pos.y }, to: { x: pos.x, y: pos.y } }); drag.current = { kind: "measure" }; }
-        else if (tool === "select") { setSelected(null); }
+        else if (tool === "select") { setSelected(null); setCondPickerUid(null); }
       } catch(err) { console.error("pointerdown", err); drag.current = null; }
     }
     function onStagePointerMove(e) {
@@ -355,7 +380,6 @@
     function handleUpload(newMap) {
       setMapList((l) => {
         const next = [...l, newMap];
-        // Persist only custom maps (not the default seeded ones)
         const defaultIds = new Set(maps.map((m) => m.id));
         try { localStorage.setItem("nz_custommaps", JSON.stringify(next.filter((m) => !defaultIds.has(m.id)))); } catch(e) {}
         return next;
@@ -363,6 +387,30 @@
       setTokensByMap((s) => ({ ...s, [newMap.id]: [] }));
       setActiveMapId(newMap.id);
       setUploadOpen(false);
+    }
+
+    function removeMap(mapId) {
+      const defaultIds = new Set(maps.map((m) => m.id));
+      if (defaultIds.has(mapId)) return; // can't remove seeded maps
+      setMapList((l) => {
+        const next = l.filter((m) => m.id !== mapId);
+        try { localStorage.setItem("nz_custommaps", JSON.stringify(next.filter((m) => !defaultIds.has(m.id)))); } catch(e) {}
+        return next;
+      });
+      setTokensByMap((s) => { const n = { ...s }; delete n[mapId]; lsSet("nz_tokens", n); return n; });
+      setFogByMap((s) => {
+        const n = { ...s }; delete n[mapId];
+        const serial = {}; Object.keys(n).forEach((k) => { serial[k] = [...n[k]]; }); lsSet("nz_fog", serial);
+        return n;
+      });
+      if (activeMapId === mapId) setActiveMapId(maps[0].id);
+    }
+
+    function resetMap(mapId) {
+      // Clear all tokens and fog for a map, go back to blank state
+      setTokens([]);
+      setRevealed(new Set());
+      addLog("🔄 Map reset to blank", "round");
     }
 
     const stageW = map.cols * cell, stageH = map.rows * cell;
@@ -373,13 +421,17 @@
       React.createElement("div", { style: { position: "relative", minWidth: 0, display: "flex", flexDirection: "column", background: "#0d0a14" } },
         // map tabs
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--hair)", background: "var(--bg-2)", overflowX: "auto", flex: "none" } },
-          mapList.map((m) => React.createElement("button", {
-            key: m.id, onClick: () => setActiveMapId(m.id),
-            style: mapTab(m.id === activeMapId),
-          },
-            React.createElement(Icon, { name: m.bg === "forest" ? "hex" : "map", size: 15 }),
-            m.name
-          )),
+          mapList.map((m) => {
+            const isCustom = !maps.some((dm) => dm.id === m.id);
+            return React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 0, flex: "none" } },
+              React.createElement("button", { onClick: () => setActiveMapId(m.id), style: mapTab(m.id === activeMapId) },
+                React.createElement(Icon, { name: m.img ? "upload" : m.bg === "forest" ? "hex" : "map", size: 15 }),
+                m.name),
+              canEdit && isCustom && React.createElement("button", { title: "Remove this map", onClick: () => { if (confirm("Remove map \"" + m.name + "\"?")) removeMap(m.id); },
+                style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", padding: "0 4px 0 2px", fontSize: 14, lineHeight: 1 } }, "✕"),
+              canEdit && React.createElement("button", { title: "Reset tokens & fog", onClick: () => { if (confirm("Clear all tokens and fog on this map?")) resetMap(m.id); },
+                style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1, display: m.id === activeMapId ? "inline" : "none" } }, "↺"));
+          }),
           canEdit && React.createElement("button", { className: "btn sm ghost", style: { flex: "none" }, onClick: () => setUploadOpen(true) },
             React.createElement(Icon, { name: "upload", size: 15 }), "Upload map"),
           // ---- Session sync button ----
@@ -410,9 +462,11 @@
           // floating toolbar
           !view3d && canMove && React.createElement(Toolbar, { tool, setTool, cell, setCell, showGrid, setShowGrid, fogEnabled, setFogEnabled, canEdit,
             onReveal: () => { const all = new Set(); for (let c = 0; c < map.cols; c++) for (let r = 0; r < map.rows; r++) all.add(`${c},${r}`); setRevealed(all); },
-            onResetFog: () => setRevealed(new Set()), onAdd: () => setAddOpen(true) }),
+            onResetFog: () => setRevealed(new Set()), onAdd: () => setAddOpen(true),
+            placingObj, setPlacingObj, placingAoe, setPlacingAoe,
+            onClearAoe: () => setAoeList([]), onClearObjects: () => setMapObjs([]) }),
           // 3D board
-          view3d && React.createElement(window.Table3D, { map, tokens, party, bestiary, activeUid, hexMode,
+          view3d && React.createElement(window.Table3D, { map, tokens, party, bestiary, activeUid, hexMode, mapObjs,
             onMoveToken: canMove ? (uid, c, r) => setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(c, 0, map.cols - 1), r: clamp(r, 0, map.rows - 1) } : t)) : null }),
           view3d && React.createElement("div", { style: { position: "absolute", top: 14, left: 16, zIndex: 12, fontSize: 12, color: "var(--ink-dim)", background: "rgba(13,10,20,0.7)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 12px", backdropFilter: "blur(6px)" } }, "Orbit: drag \u00b7 Zoom: scroll \u00b7 Move token: click figure then click destination"),
           // map note
@@ -440,6 +494,35 @@
                 backgroundImage: `linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px)`,
                 backgroundSize: `${cell}px ${cell}px` } }),
               showGrid && hexMode && React.createElement(HexGridOverlay, { cols: map.cols, rows: map.rows, cell }),
+              // ---- Map objects (walls, pillars, crates, etc.) ----
+              mapObjs.map((obj) => {
+                const OBJ_STYLES = {
+                  wall:   { background: "#3a2a1a", border: "2px solid #6b4423", borderRadius: 3 },
+                  pillar: { background: "#2a2230", border: "2px solid #9170f0", borderRadius: "50%" },
+                  crate:  { background: "#5c3a1e", border: "2px solid #b07f30", borderRadius: 4 },
+                  barrel: { background: "#4a2e14", border: "2px solid #9a6a32", borderRadius: "50%" },
+                  rock:   { background: "#3a3540", border: "2px solid #666", borderRadius: "30%" },
+                  tree:   { background: "#1a3216", border: "2px solid #2c5a1e", borderRadius: "50%" },
+                  door:   { background: "#6b4423", border: "2px solid #e8b54a", borderRadius: 2 },
+                  table:  { background: "#5c3010", border: "2px solid #9a6030", borderRadius: 4 },
+                };
+                const s = OBJ_STYLES[obj.type] || OBJ_STYLES.crate;
+                const w = (obj.w || 1) * cell - 4, h = (obj.h || 1) * cell - 4;
+                return React.createElement("div", { key: obj.id, className: "map-obj",
+                  onContextMenu: canEdit ? (e) => { e.preventDefault(); e.stopPropagation(); if (confirm("Remove this " + obj.type + "?")) setMapObjs((os) => os.filter((o) => o.id !== obj.id)); } : undefined,
+                  style: { position: "absolute", left: obj.c * cell + 2, top: obj.r * cell + 2, width: w, height: h, zIndex: 8, cursor: canEdit ? "context-menu" : "default", display: "flex", alignItems: "center", justifyContent: "center", userSelect: "none", ...s } },
+                  obj.label && React.createElement("span", { style: { fontSize: 9, color: "#fff8", fontFamily: "var(--mono)", pointerEvents: "none" } }, obj.label));
+              }),
+              // ---- AoE templates ----
+              aoeList.map((aoe) => {
+                const r = (aoe.size || 3) * cell / 2;
+                const AOE_COLORS = { circle: "#4444ff33", cone: "#ff880033", line: "#ff444433", square: "#44ff4433" };
+                const borderColor = { circle: "#4444ff", cone: "#ff8800", line: "#ff4444", square: "#44ff44" };
+                if (aoe.type === "circle") return React.createElement("div", { key: aoe.id, style: { position: "absolute", left: aoe.c * cell - r + cell / 2, top: aoe.r * cell - r + cell / 2, width: r * 2, height: r * 2, borderRadius: "50%", background: AOE_COLORS.circle, border: "2px solid " + borderColor.circle, zIndex: 9, pointerEvents: "none" } });
+                if (aoe.type === "square") return React.createElement("div", { key: aoe.id, style: { position: "absolute", left: aoe.c * cell, top: aoe.r * cell, width: (aoe.size || 3) * cell, height: (aoe.size || 3) * cell, background: AOE_COLORS.square, border: "2px solid " + borderColor.square, zIndex: 9, pointerEvents: "none" } });
+                if (aoe.type === "line") return React.createElement("div", { key: aoe.id, style: { position: "absolute", left: aoe.c * cell, top: aoe.r * cell + cell / 2 - 4, width: (aoe.size || 6) * cell, height: 8, background: AOE_COLORS.line, border: "2px solid " + borderColor.line, zIndex: 9, pointerEvents: "none" } });
+                return null;
+              }).filter(Boolean),
               // tokens (with size span, condition badge, right-click condition picker)
               tokens.map((t) => {
                 const span = t.cellSpan || 1;
@@ -456,8 +539,12 @@
                 },
                   t.uid === activeUid && React.createElement("div", { style: { position: "absolute", inset: 1, borderRadius: "50%", boxShadow: "0 0 0 3px var(--gold), 0 0 18px var(--gold)", animation: "glowpulse 1.6s ease-in-out infinite", pointerEvents: "none" } }),
                   React.createElement(Token, { name: t.name, ring: t.ring, size: (cell * span) - 8, bloodied: t.bloodied, dead: t.dead }),
+                  // Inspiration star
+                  inspired[t.uid] && React.createElement("div", { style: { position: "absolute", top: 1, left: 1, fontSize: 12, pointerEvents: "none", zIndex: 6, filter: "drop-shadow(0 0 4px gold)" } }, "⭐"),
                   // Condition badge
                   condDef && React.createElement("div", { style: { position: "absolute", top: 2, right: 2, background: condDef.color, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 4, zIndex: 6, fontFamily: "var(--mono)", pointerEvents: "none", textShadow: "0 1px 2px rgba(0,0,0,0.6)" } }, condDef.code),
+                  // Note indicator
+                  tokenNotes[t.uid] && React.createElement("div", { style: { position: "absolute", bottom: 6, left: 2, fontSize: 11, pointerEvents: "none", zIndex: 6 } }, "📝"),
                   // Condition picker (right-click)
                   condPickerUid === t.uid && React.createElement("div", { style: { position: "absolute", top: "100%", left: 0, zIndex: 40, background: "var(--bg-2)", border: "1px solid var(--hair)", borderRadius: 10, padding: 8, display: "flex", flexWrap: "wrap", gap: 4, width: 200, boxShadow: "var(--shadow-3)" } },
                     React.createElement("div", { style: { width: "100%", fontSize: 10, color: "var(--ink-dim)", fontFamily: "var(--display)", letterSpacing: "0.1em", marginBottom: 2 } }, "CONDITION"),
@@ -485,7 +572,15 @@
             )
           ),
           // selected token quick-actions
-          !view3d && sel && React.createElement(TokenHUD, { sel, damage, removeToken, addCondition: (c) => setTokens((ts) => ts.map((t) => t.uid === sel.uid ? { ...t, condition: t.condition === c ? null : c } : t)), onClose: () => setSelected(null) }),
+          !view3d && sel && React.createElement(TokenHUD, { sel, damage, removeToken,
+            addCondition: (c) => setTokens((ts) => ts.map((t) => t.uid === sel.uid ? { ...t, condition: t.condition === c ? null : c } : t)),
+            onClose: () => setSelected(null),
+            deathSaves: deathSaves[sel.uid] || { s: [false,false,false], f: [false,false,false] },
+            onDeathSave: (kind, idx) => setDeathSaves((d) => { const cur = d[sel.uid] || { s:[false,false,false], f:[false,false,false] }; const arr = [...cur[kind]]; arr[idx] = !arr[idx]; return { ...d, [sel.uid]: { ...cur, [kind]: arr } }; }),
+            inspired: !!inspired[sel.uid],
+            onInspire: () => setInspired((x) => ({ ...x, [sel.uid]: !x[sel.uid] })),
+            note: tokenNotes[sel.uid] || "",
+            onNote: (v) => setTokenNotes((n) => ({ ...n, [sel.uid]: v })) }),
           // CSS 3D dice overlay on map
           mapDice && !view3d && React.createElement(MapDiceOverlay, { key: mapDice.id, dice: mapDice }),
           // dice toggle button
@@ -503,21 +598,64 @@
     );
   }
 
+  const OBJECT_TYPES = [
+    { id: "wall",   label: "Wall",    icon: "▬", w: 3, h: 1, color: "#3a2a1a" },
+    { id: "pillar", label: "Pillar",  icon: "●", w: 1, h: 1, color: "#2a2230" },
+    { id: "crate",  label: "Crate",   icon: "■", w: 1, h: 1, color: "#5c3a1e" },
+    { id: "barrel", label: "Barrel",  icon: "⊙", w: 1, h: 1, color: "#4a2e14" },
+    { id: "rock",   label: "Rock",    icon: "◆", w: 1, h: 1, color: "#3a3540" },
+    { id: "tree",   label: "Tree",    icon: "❋", w: 1, h: 1, color: "#1a3216" },
+    { id: "door",   label: "Door",    icon: "┃", w: 1, h: 1, color: "#6b4423" },
+    { id: "table",  label: "Table",   icon: "⊞", w: 2, h: 1, color: "#5c3010" },
+  ];
+  const AOE_TYPES = [
+    { id: "circle", label: "Circle",  icon: "◯", size: 4 },
+    { id: "square", label: "Square",  icon: "□", size: 4 },
+    { id: "line",   label: "Line",    icon: "━", size: 6 },
+  ];
+
   // ---------- Toolbar ----------
-  function Toolbar({ tool, setTool, cell, setCell, showGrid, setShowGrid, fogEnabled, setFogEnabled, onReveal, onResetFog, onAdd, canEdit }) {
+  function Toolbar({ tool, setTool, cell, setCell, showGrid, setShowGrid, fogEnabled, setFogEnabled, onReveal, onResetFog, onAdd, canEdit, placingObj, setPlacingObj, placingAoe, setPlacingAoe, onClearAoe, onClearObjects }) {
+    const [showObjects, setShowObjects] = useState(false);
+    const [showAoe, setShowAoe] = useState(false);
     const tools = [
-      { id: "select", icon: "move", label: "Select & move" },
-      { id: "fog", icon: "fog", label: "Fog of war (drag to reveal, Shift to hide)", dm: true },
+      { id: "select", icon: "move", label: "Select & move (S)" },
+      { id: "fog", icon: "fog", label: "Fog of war — drag reveal, Shift hide (F)", dm: true },
       { id: "measure", icon: "ruler", label: "Measure distance" },
       { id: "ping", icon: "ping", label: "Ping location" },
     ].filter((t) => canEdit || !t.dm);
     return React.createElement("div", { style: { position: "absolute", top: 14, left: 14, zIndex: 14, display: "flex", flexDirection: "column", gap: 8 } },
+      // Standard tools
       React.createElement("div", { className: "panel", style: { padding: 6, display: "flex", flexDirection: "column", gap: 4, background: "rgba(24,18,34,0.92)", backdropFilter: "blur(8px)" } },
-        tools.map((t) => React.createElement("button", { key: t.id, title: t.label, onClick: () => setTool(t.id), style: toolBtn(tool === t.id) },
+        tools.map((t) => React.createElement("button", { key: t.id, title: t.label, onClick: () => { setTool(t.id); setShowObjects(false); setShowAoe(false); }, style: toolBtn(tool === t.id) },
           React.createElement(Icon, { name: t.icon, size: 19 }))),
         canEdit && React.createElement("div", { style: { height: 1, background: "var(--hair)", margin: "2px 4px" } }),
-        canEdit && React.createElement("button", { title: "Add token", onClick: onAdd, style: toolBtn(false) }, React.createElement(Icon, { name: "plus", size: 19 }))
+        canEdit && React.createElement("button", { title: "Add token", onClick: onAdd, style: toolBtn(false) }, React.createElement(Icon, { name: "plus", size: 19 })),
+        // Objects tool
+        canEdit && React.createElement("button", { title: "Place objects (walls, pillars, crates…)", onClick: () => { setShowObjects((x) => !x); setShowAoe(false); setTool("object"); }, style: toolBtn(tool === "object") },
+          React.createElement("span", { style: { fontSize: 16, lineHeight: 1 } }, "▬")),
+        // AoE tool
+        React.createElement("button", { title: "Place AoE template (circle, line, square)", onClick: () => { setShowAoe((x) => !x); setShowObjects(false); setTool("aoe"); }, style: toolBtn(tool === "aoe") },
+          React.createElement("span", { style: { fontSize: 16, lineHeight: 1 } }, "◯"))
       ),
+      // Object palette
+      showObjects && canEdit && React.createElement("div", { className: "panel", style: { padding: 8, background: "rgba(24,18,34,0.96)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column", gap: 6, minWidth: 130 } },
+        React.createElement("div", { style: { fontSize: 10, color: "var(--ink-dim)", fontFamily: "var(--display)", letterSpacing: "0.1em", marginBottom: 2 } }, "PLACE OBJECT"),
+        OBJECT_TYPES.map((o) => React.createElement("button", { key: o.id, title: o.label,
+          onClick: () => { setPlacingObj({ type: o.id, w: o.w, h: o.h, color: o.color }); },
+          style: { display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 7, border: "1px solid " + ((placingObj && placingObj.type === o.id) ? "var(--gold)" : "var(--hair)"), background: (placingObj && placingObj.type === o.id) ? "rgba(232,181,74,0.16)" : "var(--surface)", color: "var(--ink-soft)", cursor: "pointer", fontSize: 12.5 } },
+          React.createElement("span", { style: { fontSize: 15, color: o.color } }, o.icon), o.label)),
+        React.createElement("div", { style: { height: 1, background: "var(--hair)", margin: "2px 0" } }),
+        React.createElement("button", { onClick: onClearObjects, style: { fontSize: 11, color: "var(--red-bright)", background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: "2px 4px" } }, "✕ Clear all objects")),
+      // AoE palette
+      showAoe && React.createElement("div", { className: "panel", style: { padding: 8, background: "rgba(24,18,34,0.96)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column", gap: 6, minWidth: 130 } },
+        React.createElement("div", { style: { fontSize: 10, color: "var(--ink-dim)", fontFamily: "var(--display)", letterSpacing: "0.1em", marginBottom: 2 } }, "AOE TEMPLATE"),
+        AOE_TYPES.map((a) => React.createElement("button", { key: a.id,
+          onClick: () => setPlacingAoe({ type: a.id, size: a.size }),
+          style: { display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 7, border: "1px solid " + ((placingAoe && placingAoe.type === a.id) ? "var(--gold)" : "var(--hair)"), background: (placingAoe && placingAoe.type === a.id) ? "rgba(232,181,74,0.16)" : "var(--surface)", color: "var(--ink-soft)", cursor: "pointer", fontSize: 12.5 } },
+          React.createElement("span", { style: { fontSize: 17 } }, a.icon), a.label)),
+        React.createElement("div", { style: { height: 1, background: "var(--hair)", margin: "2px 0" } }),
+        React.createElement("button", { onClick: onClearAoe, style: { fontSize: 11, color: "var(--red-bright)", background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: "2px 4px" } }, "✕ Clear all AoE")),
       React.createElement("div", { className: "panel", style: { padding: 6, display: "flex", flexDirection: "column", gap: 4, background: "rgba(24,18,34,0.92)", backdropFilter: "blur(8px)" } },
         React.createElement("button", { title: "Toggle grid", onClick: () => setShowGrid((s) => !s), style: toolBtn(showGrid) }, React.createElement(Icon, { name: "grid", size: 19 })),
         canEdit && React.createElement("button", { title: fogEnabled ? "Fog on" : "Fog off", onClick: () => setFogEnabled((s) => !s), style: toolBtn(fogEnabled) }, React.createElement(Icon, { name: fogEnabled ? "eyeOff" : "eye", size: 19 })),
@@ -533,8 +671,9 @@
   }
 
   // ---------- Token HUD ----------
-  function TokenHUD({ sel, damage, removeToken, addCondition, onClose }) {
+  function TokenHUD({ sel, damage, removeToken, addCondition, onClose, deathSaves, onDeathSave, inspired, onInspire, note, onNote }) {
     const [customAmt, setCustomAmt] = React.useState("");
+    const [showNote, setShowNote] = React.useState(false);
     return React.createElement("div", { className: "panel rise", style: { position: "absolute", bottom: 18, left: 14, zIndex: 35, width: 310, background: "rgba(24,18,34,0.96)", backdropFilter: "blur(8px)" } },
       React.createElement("div", { className: "panel-h", style: { padding: "11px 14px" } },
         React.createElement(window.NZUI.Token, { name: sel.name, ring: sel.ring, size: 30 }),
@@ -558,8 +697,22 @@
         React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
           CONDITIONS.map((c) => React.createElement("button", { key: c.code, title: c.label, onClick: () => addCondition(c.code),
             style: { fontSize: 10, padding: "2px 5px", borderRadius: 4, border: "1px solid " + c.color + "88", background: sel.condition === c.code ? c.color : "var(--surface-2)", color: sel.condition === c.code ? "#fff" : "var(--ink-dim)", cursor: "pointer", fontWeight: 600 } }, c.code))),
-        React.createElement("button", { className: "btn ghost sm", style: { color: "var(--red-bright)" }, onClick: () => removeToken(sel.uid) },
-          React.createElement(Icon, { name: "skull", size: 15 }), "Remove from map"))
+        // Death saving throws (show when dead/unconscious)
+        sel.dead && React.createElement("div", { style: { marginTop: 4 } },
+          React.createElement("div", { style: { fontSize: 10, color: "var(--ink-dim)", fontFamily: "var(--display)", letterSpacing: "0.1em", marginBottom: 4 } }, "DEATH SAVING THROWS"),
+          React.createElement("div", { style: { display: "flex", gap: 12 } },
+            ["s", "f"].map((kind) => React.createElement("div", { key: kind, style: { display: "flex", alignItems: "center", gap: 4 } },
+              React.createElement("span", { style: { fontSize: 11, color: kind === "s" ? "var(--emerald)" : "var(--red-bright)", minWidth: 16 } }, kind === "s" ? "✓" : "✕"),
+              deathSaves[kind].map((v, i) => React.createElement("button", { key: i, onClick: () => onDeathSave(kind, i),
+                style: { width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (kind === "s" ? "var(--emerald)" : "var(--red-bright)"), background: v ? (kind === "s" ? "var(--emerald)" : "var(--red-bright)") : "transparent", cursor: "pointer" } })))))),
+        // Inspiration + Notes row
+        React.createElement("div", { className: "row", style: { gap: 8 } },
+          React.createElement("button", { onClick: onInspire, title: "Toggle Inspiration", style: { flex: "none", fontSize: 18, background: "none", border: "none", cursor: "pointer", filter: inspired ? "none" : "grayscale(1) opacity(0.4)" } }, "⭐"),
+          React.createElement("button", { onClick: () => setShowNote((x) => !x), style: { fontSize: 11, color: "var(--ink-dim)", background: "none", border: "1px solid var(--hair)", borderRadius: 6, padding: "3px 8px", cursor: "pointer" } }, note ? "📝 " + note.slice(0, 20) + (note.length > 20 ? "…" : "") : "Add note"),
+          React.createElement("div", { className: "spacer" }),
+          React.createElement("button", { className: "btn ghost sm", style: { color: "var(--red-bright)" }, onClick: () => removeToken(sel.uid) },
+            React.createElement(Icon, { name: "skull", size: 15 }), "Remove")),
+        showNote && React.createElement("input", { className: "input", autoFocus: true, placeholder: "e.g. Concentrating on Hold Person…", value: note, onChange: (e) => onNote(e.target.value), style: { fontSize: 12 } }))
     );
   }
 

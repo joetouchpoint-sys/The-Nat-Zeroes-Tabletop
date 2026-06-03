@@ -158,7 +158,9 @@
 
   function LocationPanel({ loc, maps, canEdit, onClose, onOpenMap, onToggleDiscovered, onEdit, onDelete }) {
     const t = TYPES[loc.type] || TYPES.landmark;
-    const locMaps = loc.maps.map((id) => maps.find((m) => m.id === id)).filter(Boolean);
+    // Include custom maps when looking up linked map objects
+    const allMapsForPanel = maps.concat((function() { try { return JSON.parse(localStorage.getItem("nz_custommaps") || "[]"); } catch(e) { return []; } })());
+    const locMaps = loc.maps.map((id) => allMapsForPanel.find((m) => m.id === id)).filter(Boolean);
     return React.createElement("div", { style: { borderLeft: "1px solid var(--hair)", background: "var(--bg-2)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "auto" } },
       React.createElement("div", { className: "panel-h", style: { borderRadius: 0 } },
         React.createElement("span", { style: { color: t.color } }, React.createElement(Icon, { name: t.icon, size: 18 })),
@@ -196,6 +198,8 @@
   }
 
   function LocationForm({ open, loc, maps, onClose, onSave }) {
+    // Include custom uploaded maps from localStorage so they can be linked to locations
+    const allMaps = maps.concat((function() { try { return JSON.parse(localStorage.getItem("nz_custommaps") || "[]"); } catch(e) { return []; } })());
     const blank = { id: "loc" + Date.now(), name: "", type: "town", discovered: true, x: 50, y: 50, maps: [], desc: "" };
     const [f, setF] = useState(blank);
     React.useEffect(() => { if (open) setF(loc ? { ...loc } : { ...blank, id: "loc" + Date.now() }); }, [open]);
@@ -210,7 +214,7 @@
             Object.entries(TYPES).map(([k, t]) => React.createElement("button", { key: k, onClick: () => up("type", k), style: typeChip(f.type === k, t.color) }, React.createElement(Icon, { name: t.icon, size: 14 }), t.label)))),
         React.createElement("div", { className: "field" }, React.createElement("label", null, "Linked battle maps"),
           React.createElement("div", { className: "row", style: { gap: 6, flexWrap: "wrap" } },
-            maps.map((m) => React.createElement("button", { key: m.id, onClick: () => toggleMap(m.id), style: typeChip(f.maps.includes(m.id), "var(--gold)") }, m.name)))),
+            allMaps.map((m) => React.createElement("button", { key: m.id, onClick: () => toggleMap(m.id), style: typeChip(f.maps.includes(m.id), "var(--gold)") }, m.name)))),
         React.createElement("div", { className: "field" }, React.createElement("label", null, "Description"),
           React.createElement("textarea", { className: "input", rows: 3, value: f.desc, onChange: (e) => up("desc", e.target.value) })),
         React.createElement("label", { className: "row", style: { gap: 8, cursor: "pointer", fontSize: 14 } },

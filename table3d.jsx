@@ -91,7 +91,7 @@
   }
   function roundRect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
 
-  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken }) {
+  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken, mapObjs }) {
     const mountRef = useRef(null);
     const state = useRef({});
     const onMoveRef = useRef(onMoveToken);
@@ -120,6 +120,7 @@
 
       const boardGroup = new T.Group(); scene.add(boardGroup);
       const figGroup = new T.Group(); scene.add(figGroup);
+      const objGroup = new T.Group(); scene.add(objGroup);
 
       // Orbit state
       const cam = { az: 0.6, pol: 0.88, dist: Math.max(map.cols, map.rows) * 0.95, tAz: 0.6, tPol: 0.88, tDist: Math.max(map.cols, map.rows) * 0.95, cx: 0, cz: 0 };
@@ -240,7 +241,7 @@
       function handleDice(e) { throwDice3D(e.detail.result, e.detail.theme); }
       window.addEventListener("nz:dice", handleDice);
 
-      state.current = { scene, renderer, camera, boardGroup, figGroup, cam,
+      state.current = { scene, renderer, camera, boardGroup, figGroup, objGroup, cam,
         figureObjects: [], activeRing: null,
         boardW: map.cols, boardH: map.rows,
         dispose() {
@@ -302,8 +303,9 @@
       }
     }, []);
 
-    useEffect(() => { if (state.current.boardGroup) { buildBoard(); syncFigures(); } }, [map.id, hexMode]);
+    useEffect(() => { if (state.current.boardGroup) { buildBoard(); syncFigures(); syncObjects(); } }, [map.id, hexMode]);
     useEffect(() => { if (state.current.figGroup) syncFigures(); }, [tokens, activeUid]);
+    useEffect(() => { if (state.current.objGroup) syncObjects(); }, [mapObjs]);
 
     function buildBoard() {
       const s = state.current; const g = s.boardGroup;
@@ -311,7 +313,24 @@
       const W = map.cols, H = map.rows;
 
       // ---- Battle-map surface (the grid) ----
-      const plane = new T.Mesh(new T.BoxGeometry(W, 0.5, H), new T.MeshStandardMaterial({ map: groundTexture(map, hexMode), roughness: 0.95, metalness: 0 }));
+      const planeMat = new T.MeshStandardMaterial({ map: groundTexture(map, hexMode), roughness: 0.95, metalness: 0 });
+      // If the map has a custom uploaded image, swap in that texture once loaded
+      if (map.img) {
+        new T.TextureLoader().load(map.img, function(imgTex) {
+          imgTex.anisotropy = 8;
+          // Composite: draw image + grid overlay onto canvas
+          const cv = document.createElement("canvas"); cv.width = 1024; cv.height = 1024;
+          const ctx = cv.getContext("2d");
+          ctx.drawImage(imgTex.image, 0, 0, 1024, 1024);
+          ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 1.5;
+          const cw = 1024 / W, ch = 1024 / H;
+          for (let c = 0; c <= W; c++) { ctx.beginPath(); ctx.moveTo(c * cw, 0); ctx.lineTo(c * cw, 1024); ctx.stroke(); }
+          for (let r = 0; r <= H; r++) { ctx.beginPath(); ctx.moveTo(0, r * ch); ctx.lineTo(1024, r * ch); ctx.stroke(); }
+          const combined = new T.CanvasTexture(cv); combined.anisotropy = 8;
+          planeMat.map = combined; planeMat.needsUpdate = true;
+        });
+      }
+      const plane = new T.Mesh(new T.BoxGeometry(W, 0.5, H), planeMat);
       plane.position.y = -0.25; plane.receiveShadow = true; g.add(plane);
 
       // ---- Table top (wooden slab the board sits on) ----
@@ -421,6 +440,34 @@
 
         const lbl = labelSprite(tok.name, "#" + ringColor.toString(16).padStart(6, "0"));
         lbl.position.set(wx, 1.5, wz); g.add(lbl);
+      });
+    }
+
+    function syncObjects() {
+      const s = state.current; if (!s.objGroup) return;
+      const g = s.objGroup;
+      while (g.children.length) { const c = g.children.pop(); A.disposeObj(c); }
+      const W = map.cols, H = map.rows;
+      const objs = mapObjs || [];
+      const OBJ_COLORS = { wall: 0x3a2a1a, pillar: 0x2a2230, crate: 0x5c3a1e, barrel: 0x4a2e14, rock: 0x3a3540, tree: 0x1a3216, door: 0x6b4423, table: 0x5c3010 };
+      const mats = {};
+      Object.entries(OBJ_COLORS).forEach(([k, c]) => { mats[k] = new T.MeshStandardMaterial({ color: c, roughness: 0.88 }); });
+      objs.forEach((obj) => {
+        const wx = obj.c - W / 2 + (obj.w || 1) / 2, wz = obj.r - H / 2 + (obj.h || 1) / 2;
+        const mat = mats[obj.type] || mats.crate;
+        let mesh;
+        if (obj.type === "pillar" || obj.type === "barrel" || obj.type === "tree") {
+          mesh = new T.Mesh(new T.CylinderGeometry(0.35, 0.35, obj.type === "pillar" ? 2.0 : 0.9, 12), mat);
+        } else if (obj.type === "rock") {
+          mesh = new T.Mesh(new T.IcosahedronGeometry(0.42, 0), mat);
+        } else {
+          const h3d = obj.type === "door" ? 2.2 : obj.type === "wall" ? 1.6 : obj.type === "table" ? 0.7 : 0.85;
+          mesh = new T.Mesh(new T.BoxGeometry((obj.w || 1) * 0.96, h3d, (obj.h || 1) * 0.96), mat);
+        }
+        const baseY = obj.type === "wall" ? 0.8 : obj.type === "table" ? 0.35 : 0.425;
+        mesh.position.set(wx, baseY, wz);
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        g.add(mesh);
       });
     }
 
