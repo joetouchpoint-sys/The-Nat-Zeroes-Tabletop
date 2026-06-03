@@ -612,23 +612,26 @@
       const archTop = new T.Mesh(new T.TorusGeometry(1.0, 0.18, 12, 28, Math.PI), archMat);
       archTop.position.set(0, 3.1, -3.48); archTop.rotation.z = Math.PI; scene.add(archTop);
 
-      // ---- Wall torches ----
+      // ---- Wall torches with proper holders ----
       const torchWood = new T.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.88 });
       const flameMat = new T.MeshStandardMaterial({ color: 0xff9030, emissive: 0xff5010, emissiveIntensity: 1.6, roughness: 0.4 });
+      const ironMat = new T.MeshStandardMaterial({ color: 0x3a3028, roughness: 0.7, metalness: 0.5 });
       [[-2.2, 2.6, -3.4], [2.2, 2.6, -3.4]].forEach(([tx, ty, tz]) => {
-        // Bracket
-        const bracket = new T.Mesh(new T.BoxGeometry(0.06, 0.06, 0.28), torchWood);
-        bracket.position.set(tx, ty, tz + 0.1); scene.add(bracket);
-        // Torch body
-        const torch = new T.Mesh(new T.CylinderGeometry(0.038, 0.045, 0.36, 8), torchWood);
-        torch.position.set(tx, ty + 0.02, tz + 0.06); torch.rotation.z = 0.18 * Math.sign(tx); scene.add(torch);
-        // Flame glow sphere
-        const flame = new T.Mesh(new T.SphereGeometry(0.1, 12, 10), flameMat);
-        flame.position.set(tx, ty + 0.22, tz + 0.06); flame.scale.set(0.9, 1.4, 0.9); scene.add(flame);
-        // Inner bright core
-        const core = new T.Mesh(new T.SphereGeometry(0.045, 8, 8), new T.MeshStandardMaterial({ color: "#fff8e0", emissive: "#fff8e0", emissiveIntensity: 2.0 }));
-        core.position.set(tx, ty + 0.22, tz + 0.06); scene.add(core);
-        const pl = new T.PointLight(0xff7020, 2.6, 7); pl.position.set(tx, ty + 0.3, tz + 0.1); scene.add(pl);
+        // Wall bracket (horizontal arm sticking out from wall)
+        const bracket = new T.Mesh(new T.BoxGeometry(0.05, 0.05, 0.26), ironMat);
+        bracket.position.set(tx, ty - 0.06, tz + 0.1); scene.add(bracket);
+        // Bracket cup at tip (holds torch base)
+        const cup = new T.Mesh(new T.CylinderGeometry(0.052, 0.042, 0.09, 10), ironMat);
+        cup.position.set(tx, ty + 0.0, tz + 0.06); scene.add(cup);
+        // Torch body — vertical, no tilt, sitting in cup
+        const torch = new T.Mesh(new T.CylinderGeometry(0.035, 0.043, 0.30, 8), torchWood);
+        torch.position.set(tx, ty + 0.16, tz + 0.06); scene.add(torch);
+        // Flame
+        const flame = new T.Mesh(new T.SphereGeometry(0.095, 12, 10), flameMat);
+        flame.position.set(tx, ty + 0.33, tz + 0.06); flame.scale.set(0.85, 1.3, 0.85); scene.add(flame);
+        const core = new T.Mesh(new T.SphereGeometry(0.04, 8, 8), new T.MeshStandardMaterial({ color: "#fff8e0", emissive: "#fff8e0", emissiveIntensity: 2.0 }));
+        core.position.set(tx, ty + 0.33, tz + 0.06); scene.add(core);
+        const pl = new T.PointLight(0xff7020, 2.4, 7); pl.position.set(tx, ty + 0.4, tz + 0.1); scene.add(pl);
       });
 
       // ---- Side braziers on platform ----

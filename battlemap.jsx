@@ -149,7 +149,8 @@
     // ---- Map objects (walls, pillars, etc.) ----
     const [objectsByMap, setObjectsByMap] = useState(() => lsGet("nz_objects", {}));
     const [placingObj, setPlacingObj] = useState(null);
-    const [selectedObj, setSelectedObj] = useState(null); // selected object id for manipulation
+    const [selectedObj, setSelectedObj] = useState(null); // selected object id for manipulation (2D)
+    const [selectedObj3D, setSelectedObj3D] = useState(null); // selected object id in 3D
     const [editingRiverside, setEditingRiverside] = useState(false);
     useEffect(() => { lsSet("nz_objects", objectsByMap); }, [objectsByMap]);
     const mapObjs = objectsByMap[activeMapId] || [];
@@ -204,21 +205,22 @@
             setRound(data.initiative.round || 1);
             setTurnIdx(data.initiative.turnIdx || 0);
           }
-          // Sync map list — update existing maps that are missing img, and add new ones
+          // Sync map list — preserve DM's ordering AND update imgs for any missing ones
           if (data.maps) {
             const incoming = JSON.parse(data.maps);
-            const incomingById = {};
-            incoming.forEach(function(m) { incomingById[m.id] = m; });
             setMapList(function(current) {
-              // Update any existing map that has no img but incoming has one
-              const updated = current.map(function(m) {
-                const inc = incomingById[m.id];
-                if (inc && inc.img && !m.img) return Object.assign({}, m, { img: inc.img });
-                return m;
+              const currentById = {};
+              current.forEach(function(m) { currentById[m.id] = m; });
+              // Build list in DM's order, merging img data from current if present
+              const ordered = incoming.map(function(im) {
+                const existing = currentById[im.id];
+                if (existing) return (im.img && !existing.img) ? Object.assign({}, existing, { img: im.img }) : existing;
+                return im; // new map from DM
               });
-              const currentIds = new Set(current.map(function(m) { return m.id; }));
-              const toAdd = incoming.filter(function(m) { return !currentIds.has(m.id); });
-              return toAdd.length ? [...updated, ...toAdd] : updated;
+              // Keep any local-only maps at the end
+              const incomingIds = new Set(incoming.map(function(m) { return m.id; }));
+              const extras = current.filter(function(m) { return !incomingIds.has(m.id); });
+              return extras.length ? ordered.concat(extras) : ordered;
             });
           }
           // World map background
@@ -540,7 +542,10 @@
             tool,
             onMoveToken: canMove ? (uid, c, r) => setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(c, 0, map.cols - 1), r: clamp(r, 0, map.rows - 1) } : t)) : null,
             onPlaceObject: (c, r) => { if (placingObj && canEdit) setMapObjs((os) => [...os, { id: "o" + Date.now(), ...placingObj, c, r }]); },
-            onPlaceAoe:    (c, r) => { if (placingAoe) setAoeList((as) => [...as, { id: "a" + Date.now(), ...placingAoe, c, r }]); } }),
+            onPlaceAoe:    (c, r) => { if (placingAoe) setAoeList((as) => [...as, { id: "a" + Date.now(), ...placingAoe, c, r }]); },
+            onSelectObject3D: canEdit ? (id) => setSelectedObj3D(id === selectedObj3D ? null : id) : null }),
+          // 3D object manipulation panel
+          view3d && selectedObj3D && canEdit && React.createElement(Obj3DPanel, { objId: selectedObj3D, mapObjs, setMapObjs, onClose: () => setSelectedObj3D(null) }),
           view3d && React.createElement("div", { style: { position: "absolute", top: 14, left: 64, zIndex: 12, fontSize: 12, color: "var(--ink-dim)", background: "rgba(13,10,20,0.7)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 12px", backdropFilter: "blur(6px)" } }, "Orbit: drag \u00b7 Zoom: scroll \u00b7 Hold figure to drag"),
           // map note
           React.createElement("div", { style: { position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 12, background: "rgba(13,10,20,0.8)", border: "1px solid var(--hair)", borderRadius: 100, padding: "6px 16px", fontSize: 13, color: "var(--ink-soft)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", gap: 8 } },
@@ -694,6 +699,36 @@
       // ---- Riverside Link bar ----
       React.createElement(RiversideBar, { link: riversideLink || "", canEdit, editing: editingRiverside, setEditing: setEditingRiverside, onSave: (v) => { setRiversideLink && setRiversideLink(v); setEditingRiverside(false); } })
     );
+  }
+
+  // 3D object manipulation panel — appears as floating overlay when an object is selected in 3D
+  function Obj3DPanel({ objId, mapObjs, setMapObjs, onClose }) {
+    const obj = mapObjs.find((o) => o.id === objId);
+    if (!obj) return null;
+    const upd = (changes) => setMapObjs((os) => os.map((o) => o.id === objId ? Object.assign({}, o, changes) : o));
+    return React.createElement("div", { style: { position: "absolute", top: 70, right: 330, zIndex: 40, background: "rgba(24,18,34,0.96)", border: "1px solid var(--gold-deep)", borderRadius: 12, padding: 14, backdropFilter: "blur(8px)", display: "flex", flexDirection: "column", gap: 8, minWidth: 200 } },
+      React.createElement("div", { className: "row", style: { marginBottom: 4 } },
+        React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 12, color: "var(--gold)", letterSpacing: "0.1em" } }, "3D OBJECT — " + obj.type.toUpperCase()),
+        React.createElement("div", { className: "spacer" }),
+        React.createElement("button", { onClick: onClose, style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", fontSize: 16 } }, "✕")),
+      // Rotate
+      React.createElement("div", { className: "row", style: { gap: 6 } },
+        React.createElement("span", { style: { fontSize: 12, color: "var(--ink-dim)", flex: 1 } }, "Rotate"),
+        React.createElement("button", { className: "btn sm ghost", onClick: () => upd({ rotation: ((obj.rotation || 0) - 45 + 360) % 360 }) }, "↺ -45°"),
+        React.createElement("button", { className: "btn sm ghost", onClick: () => upd({ rotation: ((obj.rotation || 0) + 45) % 360 }) }, "↻ +45°"),
+        React.createElement("button", { className: "btn sm ghost", onClick: () => upd({ rotation: 0 }) }, "0°")),
+      // Width
+      React.createElement("div", { className: "row", style: { gap: 6 } },
+        React.createElement("span", { style: { fontSize: 12, color: "var(--ink-dim)", flex: 1 } }, "Width"),
+        React.createElement("button", { className: "btn sm ghost", onClick: () => upd({ w: Math.max(1, (obj.w || 1) - 1) }) }, "−"),
+        React.createElement("span", { className: "mono", style: { fontSize: 13, minWidth: 20, textAlign: "center" } }, obj.w || 1),
+        React.createElement("button", { className: "btn sm ghost", onClick: () => upd({ w: Math.min(10, (obj.w || 1) + 1) }) }, "+")),
+      // Move: click new cell
+      React.createElement("div", { style: { fontSize: 11, color: "var(--ink-dim)" } }, "To move: switch to Select tool, click on a cell to set new position coming soon"),
+      // Delete
+      React.createElement("button", { className: "btn ghost sm", style: { color: "var(--red-bright)", marginTop: 4 },
+        onClick: () => { setMapObjs((os) => os.filter((o) => o.id !== objId)); onClose(); } },
+        React.createElement(Icon, { name: "skull", size: 14 }), "Delete object"));
   }
 
   function RiversideBar({ link, canEdit, editing, setEditing, onSave }) {

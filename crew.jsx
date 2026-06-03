@@ -282,11 +282,84 @@
         React.createElement("button", { className: "btn ghost sm", onClick: () => setAddItemOpen(false) }, "Cancel")));
   }
 
+  // Mini avatar viewer + editor — embedded in BeastEditModal
+  function BeastAvatarEditor({ beastId, initialAvatar }) {
+    var mountRef = React.useRef(null);
+    var viewerRef = React.useRef(null);
+    var A = window.Avatar3D;
+    var [cfg, setCfg] = useState(function() {
+      var saved = null;
+      try { var p = JSON.parse(localStorage.getItem("nz_beastavatars") || "{}"); saved = p[beastId]; } catch(e) {}
+      return saved || Object.assign({}, A ? A.DEFAULT : {}, initialAvatar || {});
+    });
+    var [tab, setTab] = useState("body");
+
+    React.useEffect(function() {
+      if (!window.THREE || !A || !mountRef.current) return;
+      var v = A.makeViewer(mountRef.current, cfg, { spin: true, ground: false });
+      viewerRef.current = v;
+      return function() { v.dispose(); };
+    }, []);
+    React.useEffect(function() { viewerRef.current && viewerRef.current.update(cfg); }, [cfg]);
+
+    function set(k, v) { setCfg(function(c) { return Object.assign({}, c, { [k]: v }); }); }
+    function save() {
+      try {
+        var p = JSON.parse(localStorage.getItem("nz_beastavatars") || "{}");
+        p[beastId] = cfg;
+        localStorage.setItem("nz_beastavatars", JSON.stringify(p));
+        window.NZAVATARS = window.NZAVATARS || {};
+        window.NZAVATARS[beastId] = cfg;
+      } catch(e) {}
+    }
+
+    if (!A) return React.createElement("div", { className: "muted", style: { padding: 16, fontStyle: "italic" } }, "Avatar3D not available.");
+    var group = A.GROUPS.find(function(g) { return g.id === tab; });
+    var COLORLIST = { skin:"skin", hairColor:"hairColor", facialHairColor:"hairColor", eyeColor:"eyeColor", primary:"primary", secondary:"secondary", trim:"trim", capeColor:"secondary" };
+
+    return React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 } },
+      // 3D preview
+      React.createElement("div", { style: { position: "relative", height: 240, background: "radial-gradient(120% 100% at 50% 0%, #241b38, #0d0a14)", borderRadius: 8 } },
+        React.createElement("div", { ref: mountRef, style: { position: "absolute", inset: 0 } }),
+        React.createElement("div", { style: { position: "absolute", bottom: 6, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 8 } },
+          React.createElement("button", { className: "btn sm ghost", onClick: function() { setCfg(A.randomConfig()); } }, "🎲"),
+          React.createElement("button", { className: "btn sm primary", onClick: save }, "💾 Save"))),
+      // Controls
+      React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, overflow: "auto" } },
+        React.createElement("div", { style: { display: "flex", gap: 4, flexWrap: "wrap" } },
+          A.GROUPS.filter(function(g) { return g.id !== "pose"; }).map(function(gr) {
+            return React.createElement("button", { key: gr.id, onClick: function() { setTab(gr.id); },
+              style: { padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600, border: "1px solid " + (tab === gr.id ? "var(--gold-deep)" : "var(--hair)"), background: tab === gr.id ? "rgba(232,181,74,0.14)" : "var(--surface-2)", color: tab === gr.id ? "var(--gold-bright)" : "var(--ink-dim)" } }, gr.label);
+          })),
+        group && group.controls.map(function(ctrl) {
+          var key = ctrl[0], label = ctrl[1], type = ctrl[2];
+          if (type === "chips") return React.createElement("div", { key: key, style: { marginBottom: 6 } },
+            React.createElement("div", { style: { fontSize: 10, color: "var(--ink-dim)", marginBottom: 3, fontFamily: "var(--display)", letterSpacing: "0.08em" } }, label),
+            React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 3 } },
+              (A.OPTIONS[key] || []).map(function(o) { return React.createElement("button", { key: o.id, onClick: function() { set(key, o.id); },
+                style: { padding: "3px 8px", borderRadius: 5, cursor: "pointer", fontSize: 10, border: "1px solid " + (cfg[key] === o.id ? "var(--gold-deep)" : "var(--hair)"), background: cfg[key] === o.id ? "rgba(232,181,74,0.16)" : "var(--surface-2)", color: cfg[key] === o.id ? "var(--gold-bright)" : "var(--ink-soft)" } }, o.label); })));
+          if (type === "color") return React.createElement("div", { key: key, style: { marginBottom: 6 } },
+            React.createElement("div", { style: { fontSize: 10, color: "var(--ink-dim)", marginBottom: 3, fontFamily: "var(--display)", letterSpacing: "0.08em" } }, label),
+            React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 3 } },
+              (A.OPTIONS[COLORLIST[key]] || []).map(function(c) { return React.createElement("button", { key: c, onClick: function() { set(key, c); }, title: c,
+                style: { width: 22, height: 22, borderRadius: 5, background: c, cursor: "pointer", border: cfg[key] === c ? "2px solid #fff" : "2px solid rgba(255,255,255,0.12)" } }); })));
+          if (type === "slider") return React.createElement("div", { key: key, style: { marginBottom: 6 } },
+            React.createElement("div", { style: { fontSize: 10, color: "var(--ink-dim)", marginBottom: 3, fontFamily: "var(--display)", letterSpacing: "0.08em" } }, label),
+            React.createElement("input", { type: "range", min: 0.82, max: 1.18, step: 0.01, value: cfg[key] || 1, onChange: function(e) { set(key, +e.target.value); }, style: { width: "100%", accentColor: "var(--gold)" } }));
+          if (type === "toggle") return React.createElement("div", { key: key, className: "row", style: { marginBottom: 6, cursor: "pointer" }, onClick: function() { set(key, !cfg[key]); } },
+            React.createElement("span", { style: { fontSize: 11, color: "var(--ink-dim)", flex: 1 } }, label),
+            React.createElement("div", { style: { width: 36, height: 20, borderRadius: 100, background: cfg[key] ? "var(--gold)" : "var(--surface-3)", position: "relative", transition: "background .15s" } },
+              React.createElement("div", { style: { position: "absolute", top: 2, left: cfg[key] ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s" } })));
+          return null;
+        })));
+  }
+
   // Full-featured beast/creature editor modal (DM only)
   function BeastEditModal({ open, initial, onClose, onSave }) {
     const blank = { id: null, name: "", type: "Humanoid", size: "Medium", cr: "1", hp: 10, hpMax: 10, ac: 12, speed: 30, init: 0, ring: "#e8412e", color: "#e8412e", side: "enemy", blurb: "", tags: [], stats: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, actions: [] };
     const [f, setF] = useState(blank);
     const [actStr, setActStr] = useState("");
+    const [showAvatar, setShowAvatar] = useState(false);
     React.useEffect(() => { if (open) { const b = initial ? Object.assign({}, blank, initial) : Object.assign({}, blank); setF(b); setActStr((b.actions || []).join("\n")); } }, [open]);
     function up(k, v) { setF((s) => Object.assign({}, s, { [k]: v })); }
     function upStat(k, v) { setF((s) => Object.assign({}, s, { stats: Object.assign({}, s.stats, { [k]: +v || 0 }) })); }
@@ -312,6 +385,13 @@
             React.createElement("div", { key: k, className: "field" }, React.createElement("label", null, k), React.createElement("input", { className: "input", type: "number", value: (f.stats || {})[k] || 10, onChange: (e) => upStat(k, e.target.value) })))),
         React.createElement("div", { className: "field" }, React.createElement("label", null, "Blurb"), React.createElement("textarea", { className: "input", rows: 2, value: f.blurb || "", onChange: (e) => up("blurb", e.target.value), style: { resize: "vertical" } })),
         React.createElement("div", { className: "field" }, React.createElement("label", null, "Actions (one per line)"), React.createElement("textarea", { className: "input", rows: 3, value: actStr, onChange: (e) => setActStr(e.target.value), style: { resize: "vertical" } })),
+        // 3D Avatar section
+        React.createElement("div", { style: { borderTop: "1px solid var(--hair)", paddingTop: 10 } },
+          React.createElement("div", { className: "row", style: { marginBottom: 8 } },
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 12, letterSpacing: "0.1em", color: "var(--amethyst)" } }, "🧙 3D AVATAR"),
+            React.createElement("button", { className: "btn sm ghost", style: { marginLeft: "auto" }, onClick: () => setShowAvatar((x) => !x) }, showAvatar ? "▲ Collapse" : "▼ Edit model")),
+          showAvatar && f.id && React.createElement(BeastAvatarEditor, { beastId: f.id || "temp_" + f.name, initialAvatar: f.avatar }),
+          showAvatar && !f.id && React.createElement("div", { className: "muted", style: { fontSize: 12, fontStyle: "italic" } }, "Save the entry first to enable 3D model editing.")),
         React.createElement("div", { className: "row", style: { justifyContent: "flex-end", gap: 10 } },
           React.createElement("button", { className: "btn ghost", onClick: onClose }, "Cancel"),
           React.createElement("button", { className: "btn primary", disabled: !f.name, onClick: () => onSave(Object.assign({}, f, { actions: actStr.split("\n").map((s) => s.trim()).filter(Boolean) })) }, "Save"))));

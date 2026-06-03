@@ -91,7 +91,7 @@
   }
   function roundRect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
 
-  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken, mapObjs, tool, onPlaceObject, onPlaceAoe }) {
+  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken, mapObjs, tool, onPlaceObject, onPlaceAoe, onSelectObject3D }) {
     const mountRef = useRef(null);
     const state = useRef({});
     const onMoveRef = useRef(onMoveToken);
@@ -100,6 +100,8 @@
     useEffect(() => { onPlaceObjRef.current = onPlaceObject; });
     const onPlaceAoeRef = useRef(onPlaceAoe);
     useEffect(() => { onPlaceAoeRef.current = onPlaceAoe; });
+    const onSelectObjRef = useRef(onSelectObject3D);
+    useEffect(() => { onSelectObjRef.current = onSelectObject3D; });
     const toolRef = useRef(tool);
     useEffect(() => { toolRef.current = tool; });
 
@@ -183,6 +185,17 @@
             if (currentTool === "aoe" && onPlaceAoeRef.current) onPlaceAoeRef.current(c, r);
           }
           return;
+        }
+        // Raycast against placed objects (select for 3D manipulation)
+        const objMeshes = (state.current.objectMeshes || []).map(function(o) { return o.mesh; });
+        if (objMeshes.length > 0 && onSelectObjRef.current) {
+          raycaster.setFromCamera(mouseNDC, camera);
+          const hits = raycaster.intersectObjects(objMeshes, false);
+          if (hits.length > 0) {
+            const hit = hits[0].object;
+            const entry = (state.current.objectMeshes || []).find(function(o) { return o.mesh === hit; });
+            if (entry) { onSelectObjRef.current(entry.id); return; }
+          }
         }
         const fig = pickFigureAt(e);
         if (fig && onMoveRef.current) {
@@ -435,7 +448,11 @@
         let cfg;
         if (window.NZAVATARS && window.NZAVATARS[tok.id]) cfg = window.NZAVATARS[tok.id];
         else if (tok.kind === "pc") cfg = (party.find((p) => p.id === tok.id) || {}).avatar;
-        else { const b = bestiary.find((e) => e.id === tok.id); cfg = b && b.avatar; }
+        else {
+          const b = bestiary.find((e) => e.id === tok.id);
+          // Check beast-specific avatar saved by DM in Compendium editor
+          try { const ba = JSON.parse(localStorage.getItem("nz_beastavatars") || "{}"); if (ba[tok.id]) { cfg = ba[tok.id]; } else { cfg = b && b.avatar; } } catch(e2) { cfg = b && b.avatar; }
+        }
         if (!cfg) cfg = fallbackAvatar(tok);
         const fig = A.build(cfg);
         const sc = 0.55 * (tok.kind === "enemy" ? 1.0 : 0.92);
@@ -467,6 +484,7 @@
       while (g.children.length) { const c = g.children.pop(); A.disposeObj(c); }
       const W = map.cols, H = map.rows;
       const objs = mapObjs || [];
+      s.objectMeshes = []; // track id→mesh for raycasting
       const OBJ_COLORS = { wall: 0x3a2a1a, pillar: 0x2a2230, crate: 0x5c3a1e, barrel: 0x4a2e14, rock: 0x3a3540, tree: 0x1a3216, door: 0x6b4423, table: 0x5c3010 };
       const mats = {};
       Object.entries(OBJ_COLORS).forEach(([k, c]) => { mats[k] = new T.MeshStandardMaterial({ color: c, roughness: 0.88 }); });
@@ -484,8 +502,11 @@
         }
         const baseY = obj.type === "wall" ? 0.8 : obj.type === "table" ? 0.35 : 0.425;
         mesh.position.set(wx, baseY, wz);
+        if (obj.rotation) mesh.rotation.y = obj.rotation * Math.PI / 180;
         mesh.castShadow = true; mesh.receiveShadow = true;
+        mesh.userData.objId = obj.id; // tag for raycasting
         g.add(mesh);
+        s.objectMeshes.push({ id: obj.id, mesh });
       });
     }
 
