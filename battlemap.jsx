@@ -53,14 +53,16 @@
     }
   }
 
-  function BattleMap({ maps, party, bestiary, dm, initialMapId }) {
+  function BattleMap({ maps, party, bestiary, dm, initialMapId, riversideLink, setRiversideLink }) {
     const ctx = useContext(window.NZAuth.RoleContext);
     const canEdit = ctx.can("fog");        // DM / admin
     const canMove = ctx.can("moveTokens"); // DM / admin / player
     const [mapList, setMapList] = useState(() => {
       try {
         const custom = JSON.parse(localStorage.getItem("nz_custommaps") || "[]");
-        return custom.length ? [...maps, ...custom] : maps;
+        const hiddenSeeded = lsGet("nz_hidden_seeded", []);
+        const visibleSeeded = maps.filter((m) => !hiddenSeeded.includes(m.id));
+        return visibleSeeded.length || custom.length ? [...visibleSeeded, ...custom] : maps;
       } catch(e) { return maps; }
     });
     const [activeMapId, setActiveMapId] = useState(initialMapId || maps[0].id);
@@ -146,7 +148,9 @@
     const [soundOpen, setSoundOpen] = useState(false);
     // ---- Map objects (walls, pillars, etc.) ----
     const [objectsByMap, setObjectsByMap] = useState(() => lsGet("nz_objects", {}));
-    const [placingObj, setPlacingObj] = useState(null); // { type, w, h, color } while placing
+    const [placingObj, setPlacingObj] = useState(null);
+    const [selectedObj, setSelectedObj] = useState(null); // selected object id for manipulation
+    const [editingRiverside, setEditingRiverside] = useState(false);
     useEffect(() => { lsSet("nz_objects", objectsByMap); }, [objectsByMap]);
     const mapObjs = objectsByMap[activeMapId] || [];
     const setMapObjs = (updater) => setObjectsByMap((s) => ({ ...s, [activeMapId]: typeof updater === "function" ? updater(s[activeMapId] || []) : updater }));
@@ -159,9 +163,10 @@
     const [deathSaves, setDeathSaves] = useState({}); // { uid: { s: [f,f,f], f: [f,f,f] } }
     const [inspired, setInspired] = useState({}); // { uid: bool }
     const [tokenNotes, setTokenNotes] = useState({}); // { uid: string }
-    const [roomCode, setRoomCode] = useState(null);  // null = not in a room
+    const [roomCode, setRoomCode] = useState(null);
     const [roomInput, setRoomInput] = useState("");
     const [roomOpen, setRoomOpen] = useState(false);
+    const [presence, setPresence] = useState({}); // { key: { name, role, ring } }
     const syncIncoming = useRef(false);
 
     // Persist fog and tokens on change
@@ -184,6 +189,11 @@
     // ---- Firebase real-time sync ----
     React.useEffect(() => {
       if (!roomCode || !window.NZFirebase) return;
+      // Set own presence
+      const presenceKey = ctx.user ? (ctx.user.id || ctx.user.name.replace(/[^a-z0-9]/gi, "_")) : "unknown";
+      window.NZFirebase.setPresence(presenceKey, { name: ctx.user ? ctx.user.name : "Unknown", role: ctx.role, ring: ctx.user ? ctx.user.ring : "#9170f0", ts: Date.now() });
+      // Watch presence (connected players)
+      window.NZFirebase.watchPresence((data) => { setPresence(data || {}); });
       window.NZFirebase.joinRoom(roomCode, (data) => {
         syncIncoming.current = true;
         try {
@@ -301,6 +311,8 @@
         const pos = cellFromEvent(e);
         if (kind === "measure") {
           setMeasure((m) => m ? { ...m, to: { x: pos.x, y: pos.y } } : m);
+        } else if (kind === "mapobj" && d) {
+          setMapObjs((os) => os.map((o) => o.id === d.uid ? { ...o, c: clamp(pos.c, 0, map.cols - 1), r: clamp(pos.r, 0, map.rows - 1) } : o));
         } else if (kind === "token" && d) {
           const uid = d.uid;
           setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(pos.c, 0, map.cols - 1), r: clamp(pos.r, 0, map.rows - 1) } : t));
@@ -390,11 +402,14 @@
     }
 
     function removeMap(mapId) {
+      if (mapList.length <= 1) { alert("Can't remove the last map."); return; }
       const defaultIds = new Set(maps.map((m) => m.id));
-      if (defaultIds.has(mapId)) return; // can't remove seeded maps
+      // Track hidden seeded maps so they can be excluded from the list
+      const hiddenSeeded = lsGet("nz_hidden_seeded", []);
       setMapList((l) => {
         const next = l.filter((m) => m.id !== mapId);
         try { localStorage.setItem("nz_custommaps", JSON.stringify(next.filter((m) => !defaultIds.has(m.id)))); } catch(e) {}
+        if (defaultIds.has(mapId)) lsSet("nz_hidden_seeded", [...hiddenSeeded, mapId]);
         return next;
       });
       setTokensByMap((s) => { const n = { ...s }; delete n[mapId]; lsSet("nz_tokens", n); return n; });
@@ -403,7 +418,7 @@
         const serial = {}; Object.keys(n).forEach((k) => { serial[k] = [...n[k]]; }); lsSet("nz_fog", serial);
         return n;
       });
-      if (activeMapId === mapId) setActiveMapId(maps[0].id);
+      if (activeMapId === mapId) setActiveMapId(mapList.find((m) => m.id !== mapId)?.id || maps[0].id);
     }
 
     function resetMap(mapId) {
@@ -416,32 +431,34 @@
     const stageW = map.cols * cell, stageH = map.rows * cell;
     const sel = tokens.find((t) => t.uid === selected);
 
-    return React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 312px", height: "100%", minHeight: 0 } },
+    return React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 312px", gridTemplateRows: "1fr auto", height: "100%", minHeight: 0 } },
       // ===== LEFT: stage area =====
       React.createElement("div", { style: { position: "relative", minWidth: 0, display: "flex", flexDirection: "column", background: "#0d0a14" } },
         // map tabs
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--hair)", background: "var(--bg-2)", overflowX: "auto", flex: "none" } },
-          mapList.map((m) => {
-            const isCustom = !maps.some((dm) => dm.id === m.id);
-            return React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 0, flex: "none" } },
-              React.createElement("button", { onClick: () => setActiveMapId(m.id), style: mapTab(m.id === activeMapId) },
-                React.createElement(Icon, { name: m.img ? "upload" : m.bg === "forest" ? "hex" : "map", size: 15 }),
-                m.name),
-              canEdit && isCustom && React.createElement("button", { title: "Remove this map", onClick: () => { if (confirm("Remove map \"" + m.name + "\"?")) removeMap(m.id); },
-                style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", padding: "0 4px 0 2px", fontSize: 14, lineHeight: 1 } }, "✕"),
-              canEdit && React.createElement("button", { title: "Reset tokens & fog", onClick: () => { if (confirm("Clear all tokens and fog on this map?")) resetMap(m.id); },
-                style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1, display: m.id === activeMapId ? "inline" : "none" } }, "↺"));
-          }),
+          mapList.map((m) => React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 0, flex: "none" } },
+            React.createElement("button", { onClick: () => setActiveMapId(m.id), style: mapTab(m.id === activeMapId) },
+              React.createElement(Icon, { name: m.img ? "upload" : "map", size: 15 }),
+              m.name),
+            canEdit && React.createElement("button", { title: "Reset tokens & fog", onClick: () => { if (confirm("Clear all tokens and fog on \"" + m.name + "\"?")) resetMap(m.id); },
+              style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1, display: m.id === activeMapId ? "inline" : "none" } }, "↺"),
+            canEdit && React.createElement("button", { title: "Remove this map", onClick: () => { if (confirm("Remove map \"" + m.name + "\"?")) removeMap(m.id); },
+              style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", padding: "0 4px 0 2px", fontSize: 14, lineHeight: 1 } }, "✕"))),
           canEdit && React.createElement("button", { className: "btn sm ghost", style: { flex: "none" }, onClick: () => setUploadOpen(true) },
             React.createElement(Icon, { name: "upload", size: 15 }), "Upload map"),
           // ---- Session sync button ----
           window.NZFirebase && React.createElement("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 6, marginLeft: 8 } },
             roomCode
               ? React.createElement(React.Fragment, null,
+                  // Room code badge
                   React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, background: "rgba(79,185,138,0.15)", border: "1px solid var(--emerald)", borderRadius: 100, padding: "4px 12px", fontSize: 13 } },
                     React.createElement("span", { style: { width: 8, height: 8, borderRadius: "50%", background: "var(--emerald)", animation: "glowpulse 1.6s ease-in-out infinite" } }),
-                    React.createElement("span", { className: "mono", style: { fontWeight: 700, color: "var(--emerald)", letterSpacing: "0.1em" } }, roomCode),
-                    React.createElement("button", { onClick: () => { if (window.NZFirebase) window.NZFirebase.leaveRoom(); setRoomCode(null); }, style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", fontSize: 14, padding: 0, marginLeft: 2 } }, "✕")))
+                    React.createElement("span", { className: "mono", style: { fontWeight: 700, color: "var(--emerald)", letterSpacing: "0.1em", cursor: "pointer" }, title: "Click to copy invite code", onClick: () => navigator.clipboard.writeText(roomCode) }, roomCode),
+                    React.createElement("button", { onClick: () => { if (window.NZFirebase) window.NZFirebase.leaveRoom(); setRoomCode(null); setPresence({}); }, style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", fontSize: 14, padding: 0, marginLeft: 2 } }, "✕")),
+                  // Connected players presence avatars
+                  Object.values(presence).length > 0 && React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 3 } },
+                    Object.entries(presence).slice(0, 8).map(([key, p]) => React.createElement("div", { key: key, title: p.name + " (" + p.role + ")", style: { width: 26, height: 26, borderRadius: "50%", background: p.ring || "#9170f0", border: "2px solid rgba(255,255,255,0.3)", display: "grid", placeItems: "center", fontSize: 10, fontWeight: 700, color: "#fff", fontFamily: "var(--mono)", overflow: "hidden", flexShrink: 0 } },
+                      (p.name || "?").slice(0, 2).toUpperCase()))))
               : React.createElement("button", { className: "btn sm ghost", onClick: () => setRoomOpen((x) => !x) },
                   React.createElement(Icon, { name: "party", size: 15 }), "Share session"),
             roomOpen && !roomCode && React.createElement("div", { style: { position: "absolute", top: 50, right: 140, zIndex: 50, background: "var(--surface)", border: "1px solid var(--hair)", borderRadius: 12, padding: 16, boxShadow: "var(--shadow-2)", minWidth: 260, display: "flex", flexDirection: "column", gap: 10 } },
@@ -451,10 +468,12 @@
                 React.createElement("input", { className: "input", placeholder: "Enter or paste code", value: roomInput, onChange: (e) => setRoomInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6)), style: { flex: 1, fontFamily: "var(--mono)", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase" }, maxLength: 6 }),
                 React.createElement("button", { className: "btn primary sm", disabled: roomInput.length < 4, onClick: () => { setRoomCode(roomInput); setRoomOpen(false); } }, "Join")),
               canEdit && React.createElement("button", { className: "btn ghost sm", style: { textAlign: "center" }, onClick: () => { const c = Math.random().toString(36).slice(2, 8).toUpperCase(); setRoomInput(c); setRoomCode(c); setRoomOpen(false); } }, "✨ Generate new code (DM)"),
+              roomInput.length >= 4 && React.createElement("div", { style: { fontSize: 11, color: "var(--ink-dim)", textAlign: "center" } },
+                "Share this code with your group: ",
+                React.createElement("span", { className: "mono", style: { color: "var(--gold)", fontWeight: 700, letterSpacing: "0.1em" } }, roomInput)),
               React.createElement("button", { className: "btn ghost sm", onClick: () => setRoomOpen(false) }, "Cancel"))),
           React.createElement("div", { style: { flex: "none", display: "flex", gap: 4, marginLeft: 4, background: "var(--surface)", border: "1px solid var(--hair)", borderRadius: 100, padding: 3 } },
             React.createElement("button", { onClick: () => setView3d(false), style: dimToggle(!view3d) }, "2D"),
-            React.createElement("button", { onClick: () => { setView3d(false); setHexMode((h) => !h); }, style: dimToggle(hexMode && !view3d) }, React.createElement(Icon, { name: "hex", size: 14 }), "Hex"),
             React.createElement("button", { onClick: () => setView3d(true), style: dimToggle(view3d) }, React.createElement(Icon, { name: "layers", size: 14 }), "3D"))
         ),
         // toolbar + viewport
@@ -508,10 +527,20 @@
                 };
                 const s = OBJ_STYLES[obj.type] || OBJ_STYLES.crate;
                 const w = (obj.w || 1) * cell - 4, h = (obj.h || 1) * cell - 4;
+                const isSel = selectedObj === obj.id;
+                const rot = obj.rotation || 0;
                 return React.createElement("div", { key: obj.id, className: "map-obj",
-                  onContextMenu: canEdit ? (e) => { e.preventDefault(); e.stopPropagation(); if (confirm("Remove this " + obj.type + "?")) setMapObjs((os) => os.filter((o) => o.id !== obj.id)); } : undefined,
-                  style: { position: "absolute", left: obj.c * cell + 2, top: obj.r * cell + 2, width: w, height: h, zIndex: 8, cursor: canEdit ? "context-menu" : "default", display: "flex", alignItems: "center", justifyContent: "center", userSelect: "none", ...s } },
-                  obj.label && React.createElement("span", { style: { fontSize: 9, color: "#fff8", fontFamily: "var(--mono)", pointerEvents: "none" } }, obj.label));
+                  onClick: canEdit ? (e) => { e.stopPropagation(); setSelectedObj(isSel ? null : obj.id); } : undefined,
+                  onContextMenu: canEdit ? (e) => { e.preventDefault(); e.stopPropagation(); setMapObjs((os) => os.filter((o) => o.id !== obj.id)); setSelectedObj(null); } : undefined,
+                  style: { position: "absolute", left: obj.c * cell + 2, top: obj.r * cell + 2, width: w, height: h, zIndex: isSel ? 12 : 8, cursor: canEdit ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", userSelect: "none", transform: "rotate(" + rot + "deg)", outline: isSel ? "2px solid var(--gold)" : "none", outlineOffset: 2, ...s } },
+                  // Object manipulation toolbar (when selected)
+                  isSel && canEdit && React.createElement("div", { style: { position: "absolute", top: -36, left: "50%", transform: "translateX(-50%)", zIndex: 20, display: "flex", gap: 3, background: "rgba(24,18,34,0.95)", border: "1px solid var(--hair)", borderRadius: 8, padding: "3px 6px", whiteSpace: "nowrap" }, onClick: (e) => e.stopPropagation() },
+                    React.createElement("button", { title: "Rotate left", onClick: (e) => { e.stopPropagation(); setMapObjs((os) => os.map((o) => o.id === obj.id ? { ...o, rotation: (o.rotation || 0) - 45 } : o)); }, style: { background: "none", border: "none", color: "var(--ink-soft)", cursor: "pointer", fontSize: 14, padding: "1px 4px" } }, "↺"),
+                    React.createElement("button", { title: "Rotate right", onClick: (e) => { e.stopPropagation(); setMapObjs((os) => os.map((o) => o.id === obj.id ? { ...o, rotation: (o.rotation || 0) + 45 } : o)); }, style: { background: "none", border: "none", color: "var(--ink-soft)", cursor: "pointer", fontSize: 14, padding: "1px 4px" } }, "↻"),
+                    React.createElement("button", { title: "Wider", onClick: (e) => { e.stopPropagation(); setMapObjs((os) => os.map((o) => o.id === obj.id ? { ...o, w: Math.min(12, (o.w || 1) + 1) } : o)); }, style: { background: "none", border: "none", color: "var(--ink-soft)", cursor: "pointer", fontSize: 13, padding: "1px 4px" } }, "→"),
+                    React.createElement("button", { title: "Narrower", onClick: (e) => { e.stopPropagation(); setMapObjs((os) => os.map((o) => o.id === obj.id ? { ...o, w: Math.max(1, (o.w || 1) - 1) } : o)); }, style: { background: "none", border: "none", color: "var(--ink-soft)", cursor: "pointer", fontSize: 13, padding: "1px 4px" } }, "←"),
+                    React.createElement("button", { title: "Move (click new cell with Select tool)", onClick: (e) => { e.stopPropagation(); drag.current = { kind: "mapobj", uid: obj.id }; }, style: { background: "none", border: "none", color: "var(--gold)", cursor: "pointer", fontSize: 13, padding: "1px 4px" } }, "✥"),
+                    React.createElement("button", { title: "Delete", onClick: (e) => { e.stopPropagation(); setMapObjs((os) => os.filter((o) => o.id !== obj.id)); setSelectedObj(null); }, style: { background: "none", border: "none", color: "var(--red-bright)", cursor: "pointer", fontSize: 14, padding: "1px 4px" } }, "✕")));
               }),
               // ---- AoE templates ----
               aoeList.map((aoe) => {
@@ -594,8 +623,31 @@
         timerLeft, timerSecs, setTimerSecs, timerOn, combatLog, mapLog }),
       // modals
       React.createElement(UploadMapModal, { open: uploadOpen, onClose: () => setUploadOpen(false), onUpload: handleUpload }),
-      React.createElement(AddTokenModal, { open: addOpen, onClose: () => setAddOpen(false), party, bestiary, onAdd: addToken })
+      React.createElement(AddTokenModal, { open: addOpen, onClose: () => setAddOpen(false), party, bestiary, onAdd: addToken }),
+      // ---- Riverside Link bar ----
+      React.createElement(RiversideBar, { link: riversideLink || "", canEdit, editing: editingRiverside, setEditing: setEditingRiverside, onSave: (v) => { setRiversideLink && setRiversideLink(v); setEditingRiverside(false); } })
     );
+  }
+
+  function RiversideBar({ link, canEdit, editing, setEditing, onSave }) {
+    const [val, setVal] = React.useState(link);
+    React.useEffect(() => { setVal(link); }, [link]);
+    const [copied, setCopied] = React.useState(false);
+    function copy() { navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }
+    if (!link && !canEdit) return null;
+    return React.createElement("div", { style: { gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, padding: "8px 18px", borderTop: "1px solid var(--hair)", background: "rgba(13,10,20,0.85)", backdropFilter: "blur(6px)", zIndex: 20 } },
+      React.createElement("span", { style: { fontFamily: "var(--display)", fontSize: 11, letterSpacing: "0.18em", color: "var(--gold-deep)", whiteSpace: "nowrap" } }, "🏰 RIVERSIDE LINK"),
+      editing
+        ? React.createElement(React.Fragment, null,
+            React.createElement("input", { autoFocus: true, className: "input", value: val, onChange: (e) => setVal(e.target.value), style: { flex: 1, fontSize: 13 }, placeholder: "Paste a URL or type a note…" }),
+            React.createElement("button", { className: "btn primary sm", onClick: () => onSave(val) }, "Save"),
+            React.createElement("button", { className: "btn ghost sm", onClick: () => setEditing(false) }, "Cancel"))
+        : React.createElement(React.Fragment, null,
+            link
+              ? React.createElement("a", { href: link.startsWith("http") ? link : undefined, target: "_blank", rel: "noopener", style: { flex: 1, fontSize: 13, color: "var(--gold)", textDecoration: link.startsWith("http") ? "underline" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, link)
+              : React.createElement("span", { className: "muted", style: { flex: 1, fontSize: 13, fontStyle: "italic" } }, "No link set"),
+            link && React.createElement("button", { className: "btn sm ghost", onClick: copy }, copied ? "✓ Copied!" : React.createElement(Icon, { name: "upload", size: 14 })),
+            canEdit && React.createElement("button", { className: "btn sm ghost", onClick: () => setEditing(true) }, React.createElement(Icon, { name: "settings", size: 13 }), "Edit")));
   }
 
   const OBJECT_TYPES = [

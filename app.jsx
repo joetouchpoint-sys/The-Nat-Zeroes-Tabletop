@@ -84,7 +84,9 @@
     const [deaths, setDeaths]       = useState(() => lsGet("nz_deaths",    []));
     const [predictions, setPredictions] = useState(() => lsGet("nz_predictions", []));
     const [gags, setGags]           = useState(() => lsGet("nz_gags",      []));
-    const [shoutouts, setShoutouts] = useState(() => lsGet("nz_shoutouts", []));
+    const [shoutouts, setShoutouts]     = useState(() => lsGet("nz_shoutouts",    []));
+    const [customPaths, setCustomPaths] = useState(() => lsGet("nz_worldpaths",  []));
+    const [riversideLink, setRiversideLink] = useState(() => lsGet("nz_riverside", ""));
     const [worldBgImg, setWorldBgImg] = useState(null);
     useEffect(() => { dbLoad("nz_worldbg", (img) => { if (img) setWorldBgImg(img); }); }, []);
     function saveWorldBg(img) { setWorldBgImg(img); dbSave("nz_worldbg", img || null); }
@@ -100,7 +102,9 @@
     useEffect(() => { lsSet("nz_deaths",    deaths);    }, [deaths]);
     useEffect(() => { lsSet("nz_predictions", predictions); }, [predictions]);
     useEffect(() => { lsSet("nz_gags",      gags);      }, [gags]);
-    useEffect(() => { lsSet("nz_shoutouts", shoutouts); }, [shoutouts]);
+    useEffect(() => { lsSet("nz_shoutouts",   shoutouts);    }, [shoutouts]);
+    useEffect(() => { lsSet("nz_worldpaths",  customPaths);  }, [customPaths]);
+    useEffect(() => { lsSet("nz_riverside",   riversideLink);}, [riversideLink]);
 
     const role = user ? user.role : null;
     const allowed = role ? Auth.VIEW_ACCESS[role] : [];
@@ -170,8 +174,8 @@
           React.createElement(ErrorBoundary, { key: view },
           React.createElement("div", { className: "view" },
             view === "home" && React.createElement(window.Dashboard, { data: Object.assign({}, D, { recaps, campaign }), go, user, onCampaignSave: setCampaign, timeline, setTimeline }),
-            view === "map" && React.createElement(window.BattleMap, { maps: D.maps, party: D.party, bestiary: D.bestiary, dm: D.dm, initialMapId: pendingMap }),
-            view === "world" && React.createElement(window.World, { locations: D.locations, maps: D.maps, onOpenMap: openMap, bgImg: worldBgImg, onBgImgChange: saveWorldBg }),
+            view === "map" && React.createElement(window.BattleMap, { maps: D.maps, party: D.party, bestiary: D.bestiary, dm: D.dm, initialMapId: pendingMap, riversideLink, setRiversideLink }),
+            view === "world" && React.createElement(window.World, { locations: D.locations, maps: D.maps, onOpenMap: openMap, bgImg: worldBgImg, onBgImgChange: saveWorldBg, customPaths, setCustomPaths }),
             view === "bestiary" && React.createElement(window.Bestiary, { bestiary: D.bestiary }),
             view === "party" && React.createElement(window.Party, { party: D.party, dm: D.dm, loot, setLoot }),
             view === "creator" && React.createElement(window.Creator, { party: D.party }),
