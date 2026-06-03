@@ -91,11 +91,17 @@
   }
   function roundRect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
 
-  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken, mapObjs }) {
+  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken, mapObjs, tool, onPlaceObject, onPlaceAoe }) {
     const mountRef = useRef(null);
     const state = useRef({});
     const onMoveRef = useRef(onMoveToken);
     useEffect(() => { onMoveRef.current = onMoveToken; });
+    const onPlaceObjRef = useRef(onPlaceObject);
+    useEffect(() => { onPlaceObjRef.current = onPlaceObject; });
+    const onPlaceAoeRef = useRef(onPlaceAoe);
+    useEffect(() => { onPlaceAoeRef.current = onPlaceAoe; });
+    const toolRef = useRef(tool);
+    useEffect(() => { toolRef.current = tool; });
 
     useEffect(() => {
       if (!T) return;
@@ -165,9 +171,21 @@
       const DRAG_THRESHOLD = 6;
       const down = (e) => {
         if (e.button !== 0) { dragging = true; px = e.clientX; py = e.clientY; return; }
+        const currentTool = toolRef.current;
+        // Object/AoE placement: raycast to ground plane, get grid cell
+        if (currentTool === "object" || currentTool === "aoe") {
+          const pt = groundPosAt(e);
+          if (pt) {
+            const W = state.current.boardW || map.cols, H = state.current.boardH || map.rows;
+            const c = Math.max(0, Math.min(W - 1, Math.floor(pt.x + W / 2)));
+            const r = Math.max(0, Math.min(H - 1, Math.floor(pt.z + H / 2)));
+            if (currentTool === "object" && onPlaceObjRef.current) onPlaceObjRef.current(c, r);
+            if (currentTool === "aoe" && onPlaceAoeRef.current) onPlaceAoeRef.current(c, r);
+          }
+          return;
+        }
         const fig = pickFigureAt(e);
         if (fig && onMoveRef.current) {
-          // Start token drag
           tokenDrag = { uid: fig.uid, figObj: fig.obj, downX: e.clientX, downY: e.clientY, started: false, lastC: -1, lastR: -1, shadowDisc: null };
           dom.style.cursor = "grabbing";
           return;

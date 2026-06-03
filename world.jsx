@@ -177,26 +177,27 @@
 
     return React.createElement("div", { style: { display: "grid", gridTemplateColumns: selLoc ? "1fr 360px" : "1fr", height: "100%", minHeight: 0 } },
       // ===== Map stage =====
-      React.createElement("div", { ref: mapContainerRef, style: { position: "relative", minWidth: 0, overflow: "hidden", background: is3d ? "#0a0d14" : "#0c1418" } },
-        // Inner zoomable/tiltable content
+      React.createElement("div", { ref: mapContainerRef, style: { position: "relative", minWidth: 0, overflow: "hidden", background: "#0c1418" } },
+        // WorldCanvas: FLAT (outside the tilted div) so it always fills the screen
+        React.createElement(WorldCanvas, { bgImg, is3d }),
+        // Inner div: only the CONTENT tilts in 3D mode
         React.createElement("div", { style: innerStyle },
-          React.createElement(WorldCanvas, { bgImg, is3d }),
           // Ambient cloud layer
           React.createElement(CloudLayer, null),
-          // Routes (auto + custom) — viewBox="0 0 100 100" so coords are pure 0-100 (no % needed)
+          // Routes (auto + custom) — viewBox 0-100 coordinate space
           React.createElement("svg", { viewBox: "0 0 100 100", preserveAspectRatio: "none",
             style: { position: "absolute", inset: 0, width: "100%", height: "100%", zIndex: 2, overflow: "visible" } },
-            // Auto routes between consecutive discovered locs
-            routePairs(discovered).map(([a, b], i) => React.createElement("line", { key: "auto" + i,
-              x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-              stroke: "rgba(232,181,74,0.45)", strokeWidth: 0.6, strokeDasharray: "2 2.5", vectorEffect: "non-scaling-stroke" })),
-            // Preview line while selecting second pin
+            // Auto routes — road-like double stroke
+            routePairs(discovered).map(([a, b], i) => React.createElement(React.Fragment, { key: "auto" + i },
+              React.createElement("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: "#3a2810", strokeWidth: 1.0, vectorEffect: "non-scaling-stroke" }),
+              React.createElement("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: "#c4a060", strokeWidth: 0.45, vectorEffect: "non-scaling-stroke" }))),
+            // Preview while selecting second pin
             pathingFrom && (function() {
               const fromLoc = locs.find((l) => l.id === pathingFrom);
               if (!fromLoc) return null;
-              return React.createElement("circle", { cx: fromLoc.x, cy: fromLoc.y, r: 3, fill: pathColor, opacity: 0.8, vectorEffect: "non-scaling-stroke" });
+              return React.createElement("circle", { cx: fromLoc.x, cy: fromLoc.y, r: 2, fill: pathColor, opacity: 0.9, vectorEffect: "non-scaling-stroke" });
             })(),
-            // Custom paths — rendered as polylines through waypoints
+            // Custom paths — road-like double stroke, solid
             paths.map((p) => {
               const fromLoc = locs.find((l) => l.id === p.from);
               const toLoc = locs.find((l) => l.id === p.to);
@@ -205,32 +206,24 @@
               const allPts = [[fromLoc.x, fromLoc.y], ...wps.map((w) => [w.x, w.y]), [toLoc.x, toLoc.y]];
               const midIdx = Math.floor(allPts.length / 2);
               const [mx, my] = allPts[midIdx];
-              const col = p.color || "#e8b54a";
+              const col = p.color || "#c4a060";
+              const ptStr = allPts.map(([x, y]) => x + " " + y).join(" ");
               return React.createElement(React.Fragment, { key: p.id },
-                React.createElement("polyline", { points: allPts.map(([x, y]) => x + " " + y).join(" "),
-                  fill: "none", stroke: col, strokeWidth: 1.0, strokeDasharray: "2.5 1.5", vectorEffect: "non-scaling-stroke" }),
-                // Delete button at midpoint
-                canEdit && React.createElement("circle", { cx: mx, cy: my, r: 2.2,
-                  fill: "rgba(24,18,34,0.92)", stroke: col, strokeWidth: 0.4, style: { cursor: "pointer" },
-                  onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }),
-                canEdit && React.createElement("text", { x: mx, y: my + 0.4,
-                  textAnchor: "middle", dominantBaseline: "middle", fontSize: 2.8, fill: "#fff",
-                  style: { cursor: "pointer", userSelect: "none" },
-                  onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }, "×"),
-                // Segment midpoints — drag to add bend
+                // Dark outline (road edge)
+                React.createElement("polyline", { points: ptStr, fill: "none", stroke: "#2a1a08", strokeWidth: 1.6, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" }),
+                // Light fill (road surface)
+                React.createElement("polyline", { points: ptStr, fill: "none", stroke: col, strokeWidth: 0.8, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" }),
+                // Delete × at midpoint
+                canEdit && React.createElement("circle", { cx: mx, cy: my, r: 1.8, fill: "rgba(20,14,28,0.9)", stroke: col, strokeWidth: 0.35, style: { cursor: "pointer" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }),
+                canEdit && React.createElement("text", { x: mx, y: my + 0.35, textAnchor: "middle", dominantBaseline: "middle", fontSize: 2.4, fill: "#fff", style: { cursor: "pointer", userSelect: "none" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }, "×"),
+                // Tiny segment bend handles
                 canEdit && allPts.slice(0, -1).map(([ax, ay], si) => {
                   const [bx, by] = allPts[si + 1];
                   const smx = (ax + bx) / 2, smy = (ay + by) / 2;
-                  return React.createElement("circle", { key: "seg" + si, cx: smx, cy: smy, r: 1.2,
-                    fill: col, stroke: "#fff", strokeWidth: 0.3, opacity: 0.6,
-                    style: { cursor: "grab" },
-                    onPointerDown: (e) => onSegmentPointerDown(e, p.id, si, smx, smy) });
+                  return React.createElement("circle", { key: "s" + si, cx: smx, cy: smy, r: 0.5, fill: col, opacity: 0.7, style: { cursor: "grab" }, onPointerDown: (e) => onSegmentPointerDown(e, p.id, si, smx, smy) });
                 }),
-                // Existing waypoint dots (bigger, draggable)
-                canEdit && wps.map((wp, i) => React.createElement("circle", { key: "wp" + i, cx: wp.x, cy: wp.y, r: 1.8,
-                  fill: col, stroke: "#fff", strokeWidth: 0.5,
-                  style: { cursor: "grab" },
-                  onPointerDown: (e) => onWaypointPointerDown(e, p.id, i) })));
+                // Waypoint handles (small, draggable)
+                canEdit && wps.map((wp, i) => React.createElement("circle", { key: "w" + i, cx: wp.x, cy: wp.y, r: 0.9, fill: col, stroke: "#fff", strokeWidth: 0.3, style: { cursor: "grab" }, onPointerDown: (e) => onWaypointPointerDown(e, p.id, i) })));
             }).filter(Boolean)),
           // Parchment border overlay
           React.createElement(ParchmentBorder, null),

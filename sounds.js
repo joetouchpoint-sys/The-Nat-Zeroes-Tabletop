@@ -103,11 +103,42 @@
     osc.start(); osc.stop(ac.currentTime + 0.16);
   }
 
-  var SOUNDS = { dice: playDice, crit: playCrit, nat1: playNat1, damage: playDamage, death: playDeath, turn: playTurn };
+  function playClick() {
+    var ac = getCtx(); if (!ac) return;
+    var osc = ac.createOscillator(); var gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = "sine"; osc.frequency.value = 880;
+    env(gain, ac, 0.002, 0.0, 0.06, 0.05, 0.001);
+    osc.start(); osc.stop(ac.currentTime + 0.08);
+  }
+  function playTab() {
+    var ac = getCtx(); if (!ac) return;
+    var osc = ac.createOscillator(); var gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = "sine"; osc.frequency.setValueAtTime(440, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(660, ac.currentTime + 0.06);
+    env(gain, ac, 0.003, 0.0, 0.08, 0.07, 0.001);
+    osc.start(); osc.stop(ac.currentTime + 0.1);
+  }
 
+  var SOUNDS = { dice: playDice, crit: playCrit, nat1: playNat1, damage: playDamage, death: playDeath, turn: playTurn, click: playClick, tab: playTab };
+
+  var soundsEnabled = true;
   window.NZSounds = {
     play: function(name) {
+      if (!soundsEnabled) return;
       try { if (SOUNDS[name]) SOUNDS[name](); } catch(e) {}
-    }
+    },
+    toggle: function() { soundsEnabled = !soundsEnabled; return soundsEnabled; },
+    enabled: function() { return soundsEnabled; }
   };
+
+  // Global UI click sounds — subtle click on all buttons
+  document.addEventListener("click", function(e) {
+    if (!soundsEnabled) return;
+    var el = e.target;
+    if (el.tagName === "BUTTON" || el.tagName === "A" || el.closest("button") || el.closest("a")) {
+      try { playClick(); } catch(ex) {}
+    }
+  }, { passive: true, capture: true });
 })();

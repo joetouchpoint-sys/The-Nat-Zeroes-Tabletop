@@ -482,15 +482,14 @@
       React.createElement("div", { style: { position: "relative", minWidth: 0, display: "flex", flexDirection: "column", background: "#0d0a14" } },
         // map tabs
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--hair)", background: "var(--bg-2)", overflowX: "auto", flex: "none" } },
-          mapList.map((m, idx) => React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 0, flex: "none" } },
-            // Reorder arrows (DM only)
-            canEdit && idx > 0 && React.createElement("button", { title: "Move map left", onClick: () => moveMap(m.id, -1),
-              style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1 } }, "◀"),
-            React.createElement("button", { onClick: () => setActiveMapId(m.id), style: mapTab(m.id === activeMapId) },
+          mapList.map((m, idx) => React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 0, flex: "none" },
+            draggable: !!canEdit,
+            onDragStart: canEdit ? (e) => { e.dataTransfer.setData("mapId", m.id); } : undefined,
+            onDragOver: canEdit ? (e) => e.preventDefault() : undefined,
+            onDrop: canEdit ? (e) => { e.preventDefault(); const from = e.dataTransfer.getData("mapId"); if (from !== m.id) { const fi = mapList.findIndex((x) => x.id === from), ti = mapList.findIndex((x) => x.id === m.id); if (fi >= 0 && ti >= 0) { const next = [...mapList]; [next[fi], next[ti]] = [next[ti], next[fi]]; const defaultIds = new Set(maps.map((x) => x.id)); try { localStorage.setItem("nz_custommaps", JSON.stringify(next.filter((x) => !defaultIds.has(x.id)))); } catch(ex) {} setMapList(next); } } } : undefined },
+            React.createElement("button", { onClick: () => setActiveMapId(m.id), style: { ...mapTab(m.id === activeMapId), cursor: canEdit ? "grab" : "pointer" } },
               React.createElement(Icon, { name: m.img ? "upload" : "map", size: 15 }),
               m.name),
-            canEdit && idx < mapList.length - 1 && React.createElement("button", { title: "Move map right", onClick: () => moveMap(m.id, 1),
-              style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1 } }, "▶"),
             canEdit && React.createElement("button", { title: "Reset tokens & fog", onClick: () => { if (confirm("Clear all tokens and fog on \"" + m.name + "\"?")) resetMap(m.id); },
               style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1, display: m.id === activeMapId ? "inline" : "none" } }, "↺"),
             canEdit && React.createElement("button", { title: "Remove this map", onClick: () => { if (confirm("Remove map \"" + m.name + "\"?")) removeMap(m.id); },
@@ -538,7 +537,10 @@
             onClearAoe: () => setAoeList([]), onClearObjects: () => setMapObjs([]) }),
           // 3D board
           view3d && React.createElement(window.Table3D, { map, tokens, party, bestiary, activeUid, hexMode, mapObjs,
-            onMoveToken: canMove ? (uid, c, r) => setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(c, 0, map.cols - 1), r: clamp(r, 0, map.rows - 1) } : t)) : null }),
+            tool,
+            onMoveToken: canMove ? (uid, c, r) => setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(c, 0, map.cols - 1), r: clamp(r, 0, map.rows - 1) } : t)) : null,
+            onPlaceObject: (c, r) => { if (placingObj && canEdit) setMapObjs((os) => [...os, { id: "o" + Date.now(), ...placingObj, c, r }]); },
+            onPlaceAoe:    (c, r) => { if (placingAoe) setAoeList((as) => [...as, { id: "a" + Date.now(), ...placingAoe, c, r }]); } }),
           view3d && React.createElement("div", { style: { position: "absolute", top: 14, left: 64, zIndex: 12, fontSize: 12, color: "var(--ink-dim)", background: "rgba(13,10,20,0.7)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 12px", backdropFilter: "blur(6px)" } }, "Orbit: drag \u00b7 Zoom: scroll \u00b7 Hold figure to drag"),
           // map note
           React.createElement("div", { style: { position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 12, background: "rgba(13,10,20,0.8)", border: "1px solid var(--hair)", borderRadius: 100, padding: "6px 16px", fontSize: 13, color: "var(--ink-soft)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", gap: 8 } },
@@ -702,11 +704,12 @@
     function copy() { navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => { setCopied(false); setCollapsed(true); }, 1400); }); }
     if (!link && !canEdit) return null;
 
-    // Collapsed: just a small tab at the bottom
+    // Collapsed: small floating button at bottom-left, takes no grid space
     if (collapsed) {
-      return React.createElement("div", { style: { gridColumn: "1 / -1", display: "flex", justifyContent: "flex-start", padding: "0 18px", background: "rgba(13,10,20,0.7)", borderTop: "1px solid var(--hair)", zIndex: 20 } },
-        React.createElement("button", { onClick: () => setCollapsed(false), title: "Show Riverside Link", style: { background: "none", border: "none", color: "var(--gold-deep)", cursor: "pointer", fontSize: 11, fontFamily: "var(--display)", letterSpacing: "0.14em", padding: "5px 0" } },
-          "🏰 RIVERSIDE ▲"));
+      return React.createElement("div", { style: { gridColumn: "1 / -1", height: 0, overflow: "visible", position: "relative", zIndex: 60 } },
+        React.createElement("button", { onClick: () => setCollapsed(false), title: "Show Riverside Link",
+          style: { position: "absolute", bottom: 8, left: 14, background: "rgba(13,10,20,0.92)", border: "1px solid var(--gold-deep)", borderRadius: 8, color: "var(--gold-deep)", cursor: "pointer", fontSize: 11, fontFamily: "var(--display)", letterSpacing: "0.12em", padding: "5px 10px", whiteSpace: "nowrap" } },
+          "🏰"));
     }
 
     return React.createElement("div", { style: { gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, padding: "7px 18px", borderTop: "1px solid var(--hair)", background: "rgba(13,10,20,0.85)", backdropFilter: "blur(6px)", zIndex: 20 } },
@@ -758,10 +761,10 @@
           React.createElement(Icon, { name: t.icon, size: 19 }))),
         canEdit && React.createElement("div", { style: { height: 1, background: "var(--hair)", margin: "2px 4px" } }),
         canEdit && React.createElement("button", { title: "Add token", onClick: onAdd, style: toolBtn(false) }, React.createElement(Icon, { name: "plus", size: 19 })),
-        // Objects + AoE only work in 2D mode (3D uses its own canvas)
-        !view3d && canEdit && React.createElement("button", { title: "Place objects — walls, pillars, crates (2D only)", onClick: () => { setShowObjects((x) => !x); setShowAoe(false); setTool("object"); }, style: toolBtn(tool === "object") },
+        // Objects + AoE — work in both 2D and 3D
+        canEdit && React.createElement("button", { title: "Place objects — walls, pillars, crates", onClick: () => { setShowObjects((x) => !x); setShowAoe(false); setTool("object"); }, style: toolBtn(tool === "object") },
           React.createElement("span", { style: { fontSize: 16, lineHeight: 1 } }, "▬")),
-        !view3d && React.createElement("button", { title: "Place AoE template (2D only)", onClick: () => { setShowAoe((x) => !x); setShowObjects(false); setTool("aoe"); }, style: toolBtn(tool === "aoe") },
+        React.createElement("button", { title: "Place AoE template", onClick: () => { setShowAoe((x) => !x); setShowObjects(false); setTool("aoe"); }, style: toolBtn(tool === "aoe") },
           React.createElement("span", { style: { fontSize: 16, lineHeight: 1 } }, "◯"))
       ),
       // Object palette

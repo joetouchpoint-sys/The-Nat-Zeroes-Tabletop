@@ -83,6 +83,7 @@
     const [predictions, setPredictions] = useState(() => lsGet("nz_predictions", []));
     const [gags, setGags]           = useState(() => lsGet("nz_gags",      []));
     const [shoutouts, setShoutouts]     = useState(() => lsGet("nz_shoutouts",    []));
+    const [bestiary, setBestiary]       = useState(() => lsGet("nz_bestiary",     D.bestiary));
     const [customPaths, setCustomPaths] = useState(() => lsGet("nz_worldpaths",  []));
     const [riversideLink, setRiversideLink] = useState(() => lsGet("nz_riverside", ""));
     const [worldBgImg, setWorldBgImg] = useState(null);
@@ -101,6 +102,7 @@
     useEffect(() => { lsSet("nz_predictions", predictions); }, [predictions]);
     useEffect(() => { lsSet("nz_gags",      gags);      }, [gags]);
     useEffect(() => { lsSet("nz_shoutouts",   shoutouts);    }, [shoutouts]);
+    useEffect(() => { lsSet("nz_bestiary",    bestiary);     }, [bestiary]);
     useEffect(() => { lsSet("nz_worldpaths",  customPaths);  }, [customPaths]);
     useEffect(() => { lsSet("nz_riverside",   riversideLink);}, [riversideLink]);
 
@@ -172,9 +174,9 @@
           React.createElement(ErrorBoundary, { key: view },
           React.createElement("div", { className: "view" },
             view === "home" && React.createElement(window.Dashboard, { data: Object.assign({}, D, { recaps, campaign }), go, user, onCampaignSave: setCampaign, timeline, setTimeline }),
-            view === "map" && React.createElement(window.BattleMap, { maps: D.maps, party: D.party, bestiary: D.bestiary, dm: D.dm, initialMapId: pendingMap, riversideLink, setRiversideLink, worldBgImg, onWorldBgChange: saveWorldBg }),
+            view === "map" && React.createElement(window.BattleMap, { maps: D.maps, party: D.party, bestiary, dm: D.dm, initialMapId: pendingMap, riversideLink, setRiversideLink, worldBgImg, onWorldBgChange: saveWorldBg }),
             view === "world" && React.createElement(window.World, { locations: D.locations, maps: D.maps, onOpenMap: openMap, bgImg: worldBgImg, onBgImgChange: saveWorldBg, customPaths, setCustomPaths }),
-            view === "crew" && React.createElement(window.CrewLore, { party: D.party, dm: D.dm, loot, setLoot, npcs, setNpcs, bestiary: D.bestiary }),
+            view === "crew" && React.createElement(window.CrewLore, { party: D.party, dm: D.dm, loot, setLoot, npcs, setNpcs, bestiary, setBestiary }),
             view === "creator" && React.createElement(window.Creator, { party: D.party }),
             view === "scheduler" && React.createElement(window.Scheduler, { members: D.members, pollOptions: D.pollOptions, sessions: D.sessions, weeklySchedule: D.weeklySchedule }),
             view === "recaps" && React.createElement(Recaps, { recaps, setRecaps, stats: D.stats }),

@@ -14,19 +14,44 @@
     { id: "unknown",  label: "Unknown",  emoji: "⬜", color: "var(--ink-dim)" },
   ];
 
-  function CrewLore({ party, dm, loot, setLoot, npcs, setNpcs, bestiary }) {
+  function CrewLore({ party, dm, loot, setLoot, npcs, setNpcs, bestiary, setBestiary }) {
     const ctx = useContext(window.NZAuth.RoleContext);
     const isDM = ctx.role === "dm";
     const canEditAll = isDM || ctx.role === "admin";
-    const [section, setSection] = useState("party"); // party | npcs | compendium
+    const [section, setSection] = useState("party");
     const [dndbLinks, setDndbLinks] = useState(() => lsGet("nz_dndblinks", {}));
     const [charDetail, setCharDetail] = useState(null);
     const [lootOpen, setLootOpen] = useState(false);
     const [addItemOpen, setAddItemOpen] = useState(false);
     const [npcEdit, setNpcEdit] = useState(null);
     const [beastDetail, setBeastDetail] = useState(null);
+    const [beastEdit, setBeastEdit] = useState(null); // null=closed, false=new, obj=editing
     const [bSearch, setBSearch] = useState("");
     const [bSide, setBSide] = useState("all");
+    const [bPhotos, setBPhotos] = useState(() => { try { return JSON.parse(localStorage.getItem("nz_beastphotos") || "{}"); } catch(e) { return {}; } });
+
+    function saveBeastPhoto(id, dataUrl) {
+      const next = { ...bPhotos, [id]: dataUrl };
+      setBPhotos(next); try { localStorage.setItem("nz_beastphotos", JSON.stringify(next)); } catch(e) {}
+    }
+    function uploadBeastPhoto(id, e) {
+      const f = e.target.files[0]; if (!f) return;
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const img = new Image(); img.onload = function() {
+          const s = Math.min(1, 200 / Math.max(img.width, img.height));
+          const cv = document.createElement("canvas"); cv.width = Math.round(img.width*s); cv.height = Math.round(img.height*s);
+          cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+          saveBeastPhoto(id, cv.toDataURL("image/jpeg", 0.85));
+        }; img.src = ev.target.result;
+      }; reader.readAsDataURL(f);
+    }
+    function saveBeast(b) {
+      if (b.id) { setBestiary && setBestiary((bs) => bs.map((x) => x.id === b.id ? b : x)); }
+      else { setBestiary && setBestiary((bs) => bs.concat([Object.assign({}, b, { id: "e" + Date.now() })])); }
+      setBeastEdit(null);
+    }
+    function deleteBeast(id) { if (confirm("Delete this entry?")) { setBestiary && setBestiary((bs) => bs.filter((b) => b.id !== id)); setBeastDetail(null); } }
 
     function saveLink(charId, url) {
       const next = { ...dndbLinks, [charId]: url };
@@ -104,25 +129,34 @@
 
       // ===== COMPENDIUM =====
       section === "compendium" && React.createElement(React.Fragment, null,
-        React.createElement("div", { className: "row", style: { marginBottom: 16, gap: 10 } },
-          React.createElement("input", { className: "input", placeholder: "Search creatures…", value: bSearch, onChange: (e) => setBSearch(e.target.value), style: { flex: "1 1 200px", maxWidth: 260 } }),
+        React.createElement("div", { className: "row", style: { marginBottom: 16, gap: 10, flexWrap: "wrap" } },
+          React.createElement("input", { className: "input", placeholder: "Search creatures…", value: bSearch, onChange: (e) => setBSearch(e.target.value), style: { flex: "1 1 180px", maxWidth: 240 } }),
           React.createElement("div", { className: "row", style: { gap: 6 } },
             [["all","All"], ["enemy","Enemies"], ["ally","Allies"]].map(([k, l]) =>
-              React.createElement("button", { key: k, className: "btn sm" + (bSide === k ? " primary" : " ghost"), onClick: () => setBSide(k) }, l)))),
-        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 } },
+              React.createElement("button", { key: k, className: "btn sm" + (bSide === k ? " primary" : " ghost"), onClick: () => setBSide(k) }, l))),
+          isDM && React.createElement("button", { className: "btn primary sm", onClick: () => setBeastEdit(false) }, React.createElement(Icon, { name: "plus", size: 14 }), "Add entry")),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 } },
           bestiary.filter((e) => {
             const matchSide = bSide === "all" || (bSide === "ally" ? e.side === "ally" : (e.side || "enemy") === "enemy");
             const matchSearch = !bSearch || e.name.toLowerCase().includes(bSearch.toLowerCase());
             return matchSide && matchSearch;
-          }).map((e) => React.createElement("div", { key: e.id, className: "panel", style: { overflow: "hidden", cursor: "pointer" }, onClick: () => setBeastDetail(e) },
+          }).map((e) => React.createElement("div", { key: e.id, className: "panel", style: { overflow: "hidden", cursor: "pointer", position: "relative" }, onClick: () => setBeastDetail(e) },
+            isDM && React.createElement("div", { style: { position: "absolute", top: 8, right: 8, display: "flex", gap: 4, zIndex: 2 }, onClick: (ev) => ev.stopPropagation() },
+              React.createElement("label", { title: "Upload icon", style: { cursor: "pointer", fontSize: 14, padding: "2px 4px" } },
+                "🖼️", React.createElement("input", { type: "file", accept: "image/*", hidden: true, onChange: (ev) => uploadBeastPhoto(e.id, ev) })),
+              React.createElement("button", { onClick: () => setBeastEdit(e), style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", fontSize: 14 } }, "✏️"),
+              React.createElement("button", { onClick: (ev) => { ev.stopPropagation(); deleteBeast(e.id); }, style: { background: "none", border: "none", color: "var(--red-bright)", cursor: "pointer", fontSize: 14 } }, "🗑️")),
             React.createElement("div", { style: { padding: "14px 16px 10px", borderBottom: "1px solid var(--hair)", display: "flex", alignItems: "center", gap: 10 } },
-              React.createElement(Token, { name: e.name, ring: e.ring, size: 36 }),
+              bPhotos[e.id]
+                ? React.createElement("img", { src: bPhotos[e.id], style: { width: 36, height: 36, borderRadius: "50%", objectFit: "cover", border: "2px solid " + (e.ring || e.color || "var(--hair)") } })
+                : React.createElement(Token, { name: e.name, ring: e.ring || e.color, size: 36 }),
               React.createElement("div", { style: { flex: 1, minWidth: 0 } },
-                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 600, fontSize: 15 } }, e.name),
-                React.createElement("div", { className: "muted", style: { fontSize: 11.5 } }, e.type + " · CR " + e.cr))),
-            React.createElement("div", { style: { display: "flex", gap: 6, padding: "8px 16px", flexWrap: "wrap" } },
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 600, fontSize: 14 } }, e.name),
+                React.createElement("div", { className: "muted", style: { fontSize: 11 } }, (e.type || "Unknown") + " · CR " + (e.cr || "?")))),
+            React.createElement("div", { style: { display: "flex", gap: 6, padding: "7px 16px", flexWrap: "wrap" } },
               [["HP", e.hp], ["AC", e.ac], ["Spd", e.speed]].map(([l, v]) => React.createElement("span", { key: l, className: "tag", style: { fontSize: 10 } }, l + " " + v)))))),
-        beastDetail && React.createElement(BeastModal, { e: beastDetail, onClose: () => setBeastDetail(null) })));
+        beastDetail && React.createElement(BeastModal, { e: beastDetail, photo: bPhotos[beastDetail.id], onClose: () => setBeastDetail(null), isDM, onEdit: () => { setBeastEdit(beastDetail); setBeastDetail(null); } }),
+        beastEdit !== null && React.createElement(BeastEditModal, { open: true, initial: beastEdit || null, onClose: () => setBeastEdit(null), onSave: saveBeast })));
   }
 
   function CharCard({ p, dndbUrl, onOpen, canEditLink, onSaveLink }) {
@@ -174,7 +208,7 @@
           React.createElement(Icon, { name: "link", size: 16 }), "Open sheet on D&D Beyond")));
   }
 
-  function BeastModal({ e, onClose }) {
+  function BeastModal({ e, photo, onClose, isDM, onEdit }) {
     const [hp, setHp] = useState(e?.hp || 0);
     React.useEffect(() => { if (e) setHp(e.hp); }, [e]);
     if (!e) return null;
@@ -191,8 +225,9 @@
           React.createElement("div", { className: "section-title" }, "Actions"),
           e.actions.map((a, i) => React.createElement("div", { key: i, style: { padding: "6px 0", borderBottom: "1px solid var(--hair)", fontSize: 13.5, color: "var(--ink-soft)" } }, a))),
         React.createElement("div", { className: "row", style: { gap: 10, justifyContent: "flex-end" } },
+          isDM && React.createElement("button", { className: "btn ghost", onClick: onEdit }, React.createElement(Icon, { name: "settings", size: 14 }), "Edit"),
           React.createElement("button", { className: "btn primary", onClick: () => { window.dispatchEvent(new CustomEvent("nz:addtoken", { detail: e })); onClose(); } },
-            React.createElement(Icon, { name: "plus", size: 15 }), "Add to map"))));
+            React.createElement(Icon, { name: "plus", size: 15 }), "Add to map")))));
   }
 
   function NpcModal(props) {
@@ -245,6 +280,41 @@
           ["Party"].concat(players).map((n) => React.createElement("option", { key: n, value: n }, n))),
         React.createElement("button", { className: "btn primary sm", onClick: () => { if (newItem.name) { onAddItem(newItem); setNewItem({ name: "", qty: 1, holder: "" }); } } }, "Add"),
         React.createElement("button", { className: "btn ghost sm", onClick: () => setAddItemOpen(false) }, "Cancel")));
+  }
+
+  // Full-featured beast/creature editor modal (DM only)
+  function BeastEditModal({ open, initial, onClose, onSave }) {
+    const blank = { id: null, name: "", type: "Humanoid", size: "Medium", cr: "1", hp: 10, hpMax: 10, ac: 12, speed: 30, init: 0, ring: "#e8412e", color: "#e8412e", side: "enemy", blurb: "", tags: [], stats: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, actions: [] };
+    const [f, setF] = useState(blank);
+    const [actStr, setActStr] = useState("");
+    React.useEffect(() => { if (open) { const b = initial ? Object.assign({}, blank, initial) : Object.assign({}, blank); setF(b); setActStr((b.actions || []).join("\n")); } }, [open]);
+    function up(k, v) { setF((s) => Object.assign({}, s, { [k]: v })); }
+    function upStat(k, v) { setF((s) => Object.assign({}, s, { stats: Object.assign({}, s.stats, { [k]: +v || 0 }) })); }
+    return React.createElement(Modal, { open, onClose, title: (initial && initial.id) ? "Edit: " + f.name : "New Compendium Entry", w: 580 },
+      React.createElement("div", { style: { padding: 20, display: "flex", flexDirection: "column", gap: 12, maxHeight: "70vh", overflowY: "auto" } },
+        React.createElement("div", { className: "row", style: { gap: 10 } },
+          React.createElement("div", { className: "field", style: { flex: 2 } }, React.createElement("label", null, "Name"), React.createElement("input", { className: "input", value: f.name, onChange: (e) => up("name", e.target.value), autoFocus: true })),
+          React.createElement("div", { className: "field", style: { flex: 1 } }, React.createElement("label", null, "CR"), React.createElement("input", { className: "input", value: f.cr, onChange: (e) => up("cr", e.target.value) })),
+          React.createElement("div", { className: "field", style: { flex: 1 } }, React.createElement("label", null, "Side"),
+            React.createElement("select", { className: "input", value: f.side || "enemy", onChange: (e) => up("side", e.target.value) },
+              React.createElement("option", { value: "enemy" }, "Enemy"), React.createElement("option", { value: "ally" }, "Ally")))),
+        React.createElement("div", { className: "row", style: { gap: 10 } },
+          React.createElement("div", { className: "field", style: { flex: 2 } }, React.createElement("label", null, "Type"), React.createElement("input", { className: "input", value: f.type, onChange: (e) => up("type", e.target.value), placeholder: "Humanoid, Beast…" })),
+          React.createElement("div", { className: "field", style: { flex: 1 } }, React.createElement("label", null, "Size"), React.createElement("select", { className: "input", value: f.size, onChange: (e) => up("size", e.target.value) },
+            ["Tiny","Small","Medium","Large","Huge","Gargantuan"].map((s) => React.createElement("option", { key: s, value: s }, s))))),
+        React.createElement("div", { className: "row", style: { gap: 10 } },
+          [["hp","HP"],["hpMax","HP Max"],["ac","AC"],["speed","Speed"],["init","Initiative"]].map(([k, l]) =>
+            React.createElement("div", { key: k, className: "field", style: { flex: 1 } }, React.createElement("label", null, l), React.createElement("input", { className: "input", type: "number", value: f[k] || 0, onChange: (e) => up(k, +e.target.value || 0) })))),
+        React.createElement("div", { className: "field" }, React.createElement("label", null, "Ring colour"), React.createElement("input", { type: "color", value: f.ring || "#e8412e", onChange: (e) => { up("ring", e.target.value); up("color", e.target.value); }, style: { width: 48, height: 32, border: "1px solid var(--hair)", borderRadius: 6, cursor: "pointer" } })),
+        React.createElement("div", { className: "section-title", style: { margin: "4px 0 0" } }, "Stats"),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 } },
+          ["STR","DEX","CON","INT","WIS","CHA"].map((k) =>
+            React.createElement("div", { key: k, className: "field" }, React.createElement("label", null, k), React.createElement("input", { className: "input", type: "number", value: (f.stats || {})[k] || 10, onChange: (e) => upStat(k, e.target.value) })))),
+        React.createElement("div", { className: "field" }, React.createElement("label", null, "Blurb"), React.createElement("textarea", { className: "input", rows: 2, value: f.blurb || "", onChange: (e) => up("blurb", e.target.value), style: { resize: "vertical" } })),
+        React.createElement("div", { className: "field" }, React.createElement("label", null, "Actions (one per line)"), React.createElement("textarea", { className: "input", rows: 3, value: actStr, onChange: (e) => setActStr(e.target.value), style: { resize: "vertical" } })),
+        React.createElement("div", { className: "row", style: { justifyContent: "flex-end", gap: 10 } },
+          React.createElement("button", { className: "btn ghost", onClick: onClose }, "Cancel"),
+          React.createElement("button", { className: "btn primary", disabled: !f.name, onClick: () => onSave(Object.assign({}, f, { actions: actStr.split("\n").map((s) => s.trim()).filter(Boolean) })) }, "Save"))));
   }
 
   window.CrewLore = CrewLore;
