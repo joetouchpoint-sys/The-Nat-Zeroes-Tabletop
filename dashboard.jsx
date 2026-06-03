@@ -15,6 +15,29 @@
     (p, c) => `${p} aka ${c} — let's dungeon some dragons.`,
     (p, c) => `The party grows restless, ${p}. ${c} sharpens their weapon.`,
     (p, c) => `Roll for initiative, ${p}. ${c} is already bleeding slightly.`,
+    (p, c) => `The tavern door swings open. ${c} enters, ${p} follows close behind.`,
+    (p, c) => `${c} rolled a 1 last session. ${p}, today we fix that.`,
+    (p, c) => `Gloomfang is waiting. ${p}'s got ${c}. Odds are basically even.`,
+    (p, c) => `Another gold piece, another disaster. Welcome back, ${p}.`,
+    (p, c) => `${c} has entered the realm. ${p}, your dice await.`,
+    (p, c) => `No TPK today — probably. Good to see you, ${p}.`,
+    (p, c) => `${p}! ${c} is here and only mildly cursed.`,
+    (p, c) => `The map is set. The fog is thick. ${p} and ${c} are ready.`,
+    (p, c) => `${c} checks for traps. ${p} tells them there are none. ${c} checks again.`,
+    (p, c) => `Session ${p}. Character: ${c}. Likelihood of poor decisions: high.`,
+  ];
+  // DM-specific greetings (no character name needed)
+  const DM_GREETINGS = [
+    (p) => `Welcome back, ${p}. The world is yours to break.`,
+    (p) => `${p} the Dungeon Master has entered the tavern. Everyone pretends to look busy.`,
+    (p) => `The dice fear you, ${p}. Well — they should.`,
+    (p) => `${p}, your players await. Try not to kill them all this session.`,
+    (p) => `It's a good day to be the DM, ${p}. Gloomfang has legendary actions.`,
+    (p) => `${p} opens their DM screen. The party hears ominous shuffling.`,
+    (p) => `Roll for morale, everyone. ${p} is here.`,
+    (p) => `${p}, mastermind of chaos, returns. The party never stood a chance.`,
+    (p) => `Behind the screen once more, ${p}. Let the campaign continue.`,
+    (p) => `${p} has logged in. The tax collector sharpens his legendary longsword.`,
   ];
 
   function Dashboard({ data, go, user, onCampaignSave, timeline, setTimeline }) {
@@ -25,11 +48,15 @@
     const [editCampaign, setEditCampaign] = useState(false);
 
     // Personal greeting
+    const isDMUser = ctx.role === "dm";
     const char = party.find((p) => p.player === user?.name);
     const playerName = user?.name || "Adventurer";
     const charName = char?.name || "your character";
-    const greetIdx = Math.floor(Date.now() / 86400000) % GREETINGS.length;
-    const greeting = GREETINGS[greetIdx](playerName, charName);
+    // Hourly rotation so it changes each time you re-open the site (not just daily)
+    const hourIdx = Math.floor(Date.now() / 3600000);
+    const greeting = isDMUser
+      ? DM_GREETINGS[hourIdx % DM_GREETINGS.length](playerName)
+      : GREETINGS[hourIdx % GREETINGS.length](playerName, charName);
 
     return React.createElement("div", { className: "view-pad", style: { maxWidth: 1180 } },
       // Greeting banner

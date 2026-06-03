@@ -189,7 +189,7 @@
             // Auto routes between consecutive discovered locs
             routePairs(discovered).map(([a, b], i) => React.createElement("line", { key: "auto" + i,
               x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-              stroke: "rgba(232,181,74,0.35)", strokeWidth: 0.4, strokeDasharray: "1.5 1.8", vectorEffect: "non-scaling-stroke" })),
+              stroke: "rgba(232,181,74,0.45)", strokeWidth: 0.6, strokeDasharray: "2 2.5", vectorEffect: "non-scaling-stroke" })),
             // Preview line while selecting second pin
             pathingFrom && (function() {
               const fromLoc = locs.find((l) => l.id === pathingFrom);
@@ -208,7 +208,7 @@
               const col = p.color || "#e8b54a";
               return React.createElement(React.Fragment, { key: p.id },
                 React.createElement("polyline", { points: allPts.map(([x, y]) => x + " " + y).join(" "),
-                  fill: "none", stroke: col, strokeWidth: 0.7, strokeDasharray: "2 1.2", vectorEffect: "non-scaling-stroke" }),
+                  fill: "none", stroke: col, strokeWidth: 1.0, strokeDasharray: "2.5 1.5", vectorEffect: "non-scaling-stroke" }),
                 // Delete button at midpoint
                 canEdit && React.createElement("circle", { cx: mx, cy: my, r: 2.2,
                   fill: "rgba(24,18,34,0.92)", stroke: col, strokeWidth: 0.4, style: { cursor: "pointer" },
@@ -337,12 +337,21 @@
 
   // World background canvas
   function WorldCanvas({ bgImg, is3d }) {
+    // Outdoor fantasy camp background for 3D mode
+    const outdoorBg = [
+      "radial-gradient(circle at 50% 90%, rgba(180,90,20,0.55) 0%, transparent 35%)", // campfire glow on ground
+      "radial-gradient(ellipse 80% 40% at 50% 95%, rgba(100,55,10,0.5) 0%, transparent 60%)", // ground
+      "radial-gradient(ellipse 12% 70% at 5% 60%, rgba(20,50,10,0.9) 0%, transparent 100%)",  // tree left
+      "radial-gradient(ellipse 10% 60% at 95% 55%, rgba(20,50,10,0.9) 0%, transparent 100%)", // tree right
+      "radial-gradient(ellipse 8% 50% at 15% 70%, rgba(15,40,8,0.85) 0%, transparent 100%)",  // tree mid-left
+      "radial-gradient(ellipse 7% 45% at 82% 68%, rgba(15,40,8,0.85) 0%, transparent 100%)",  // tree mid-right
+      "radial-gradient(ellipse 20% 25% at 50% 100%, rgba(80,45,10,0.6) 0%, transparent 100%)", // path/earth
+      "linear-gradient(180deg, #06080a 0%, #0a1008 25%, #0d1a0a 50%, #142808 75%, #1a3010 100%)", // sky+forest
+    ].join(", ");
     return React.createElement("div", { style: { position: "absolute", inset: 0, zIndex: 1,
       background: bgImg
         ? "url(" + bgImg + ") center/cover no-repeat"
-        : (is3d
-          ? "radial-gradient(60% 50% at 38% 64%, rgba(58,74,46,0.9), transparent 70%), radial-gradient(45% 42% at 64% 42%, rgba(74,66,44,0.85), transparent 72%), radial-gradient(120% 120% at 50% 50%, #1a3a24, #0d1a10)"
-          : "radial-gradient(60% 50% at 38% 64%, rgba(58,74,46,0.95), transparent 70%), radial-gradient(45% 42% at 64% 42%, rgba(74,66,44,0.9), transparent 72%), radial-gradient(120% 120% at 50% 50%, #16323a, #0b171c)") } },
+        : (is3d ? outdoorBg : "radial-gradient(60% 50% at 38% 64%, rgba(58,74,46,0.95), transparent 70%), radial-gradient(45% 42% at 64% 42%, rgba(74,66,44,0.9), transparent 72%), radial-gradient(120% 120% at 50% 50%, #16323a, #0b171c)") } },
       !bgImg && React.createElement("div", { style: { position: "absolute", inset: 0, opacity: 0.45,
         backgroundImage: "linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",
         backgroundSize: "64px 64px" } }),
@@ -356,7 +365,7 @@
       style: { position: "absolute", left: loc.x + "%", top: loc.y + "%", transform: "translate(-50%,-100%)", zIndex: active ? 8 : 6,
         background: "none", border: "none", cursor: onPointerDown ? "grab" : "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
         touchAction: "none", filter: isPathingFrom ? "drop-shadow(0 0 8px " + t.color + ")" : "none" } },
-      React.createElement("div", { style: { display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)",
+      React.createElement("div", { style: { display: "grid", placeItems: "center", width: 28, height: 28, borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)",
         background: undiscovered ? "rgba(40,40,50,0.85)" : "radial-gradient(circle at 40% 35%, " + t.color + ", " + t.color + "99)",
         border: "2px solid " + (undiscovered ? "var(--ink-faint)" : "#fff8"),
         boxShadow: active ? "0 0 0 4px " + t.color + "55, 0 4px 14px rgba(0,0,0,0.6)" : "0 4px 14px rgba(0,0,0,0.6)" } },

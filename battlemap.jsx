@@ -452,6 +452,21 @@
       if (activeMapId === mapId) setActiveMapId(mapList.find((m) => m.id !== mapId)?.id || maps[0].id);
     }
 
+    function moveMap(mapId, dir) {
+      setMapList((l) => {
+        const idx = l.findIndex((m) => m.id === mapId);
+        if (idx < 0) return l;
+        const ni = idx + dir;
+        if (ni < 0 || ni >= l.length) return l;
+        const next = [...l];
+        [next[idx], next[ni]] = [next[ni], next[idx]];
+        // Persist updated custom maps order
+        const defaultIds = new Set(maps.map((m) => m.id));
+        try { localStorage.setItem("nz_custommaps", JSON.stringify(next.filter((m) => !defaultIds.has(m.id)))); } catch(e) {}
+        return next;
+      });
+    }
+
     function resetMap(mapId) {
       // Clear all tokens and fog for a map, go back to blank state
       setTokens([]);
@@ -467,10 +482,15 @@
       React.createElement("div", { style: { position: "relative", minWidth: 0, display: "flex", flexDirection: "column", background: "#0d0a14" } },
         // map tabs
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--hair)", background: "var(--bg-2)", overflowX: "auto", flex: "none" } },
-          mapList.map((m) => React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 0, flex: "none" } },
+          mapList.map((m, idx) => React.createElement("div", { key: m.id, style: { display: "flex", alignItems: "center", gap: 0, flex: "none" } },
+            // Reorder arrows (DM only)
+            canEdit && idx > 0 && React.createElement("button", { title: "Move map left", onClick: () => moveMap(m.id, -1),
+              style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1 } }, "◀"),
             React.createElement("button", { onClick: () => setActiveMapId(m.id), style: mapTab(m.id === activeMapId) },
               React.createElement(Icon, { name: m.img ? "upload" : "map", size: 15 }),
               m.name),
+            canEdit && idx < mapList.length - 1 && React.createElement("button", { title: "Move map right", onClick: () => moveMap(m.id, 1),
+              style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1 } }, "▶"),
             canEdit && React.createElement("button", { title: "Reset tokens & fog", onClick: () => { if (confirm("Clear all tokens and fog on \"" + m.name + "\"?")) resetMap(m.id); },
               style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", padding: "0 2px", fontSize: 12, lineHeight: 1, display: m.id === activeMapId ? "inline" : "none" } }, "↺"),
             canEdit && React.createElement("button", { title: "Remove this map", onClick: () => { if (confirm("Remove map \"" + m.name + "\"?")) removeMap(m.id); },
@@ -679,7 +699,7 @@
     const [collapsed, setCollapsed] = React.useState(false);
     const [copied, setCopied] = React.useState(false);
     React.useEffect(() => { setVal(link); }, [link]);
-    function copy() { navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }
+    function copy() { navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => { setCopied(false); setCollapsed(true); }, 1400); }); }
     if (!link && !canEdit) return null;
 
     // Collapsed: just a small tab at the bottom
@@ -738,11 +758,10 @@
           React.createElement(Icon, { name: t.icon, size: 19 }))),
         canEdit && React.createElement("div", { style: { height: 1, background: "var(--hair)", margin: "2px 4px" } }),
         canEdit && React.createElement("button", { title: "Add token", onClick: onAdd, style: toolBtn(false) }, React.createElement(Icon, { name: "plus", size: 19 })),
-        // Objects tool
-        canEdit && React.createElement("button", { title: "Place objects (walls, pillars, crates…)", onClick: () => { setShowObjects((x) => !x); setShowAoe(false); setTool("object"); }, style: toolBtn(tool === "object") },
+        // Objects + AoE only work in 2D mode (3D uses its own canvas)
+        !view3d && canEdit && React.createElement("button", { title: "Place objects — walls, pillars, crates (2D only)", onClick: () => { setShowObjects((x) => !x); setShowAoe(false); setTool("object"); }, style: toolBtn(tool === "object") },
           React.createElement("span", { style: { fontSize: 16, lineHeight: 1 } }, "▬")),
-        // AoE tool
-        React.createElement("button", { title: "Place AoE template (circle, line, square)", onClick: () => { setShowAoe((x) => !x); setShowObjects(false); setTool("aoe"); }, style: toolBtn(tool === "aoe") },
+        !view3d && React.createElement("button", { title: "Place AoE template (2D only)", onClick: () => { setShowAoe((x) => !x); setShowObjects(false); setTool("aoe"); }, style: toolBtn(tool === "aoe") },
           React.createElement("span", { style: { fontSize: 16, lineHeight: 1 } }, "◯"))
       ),
       // Object palette

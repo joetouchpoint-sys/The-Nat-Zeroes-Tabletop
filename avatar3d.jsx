@@ -140,8 +140,11 @@
 
     // ---- robe skirt (for robe outfit) ----
     if (c.outfit === "robe") {
-      // Skirt positioned to overlap legs completely without showing gap
       add(new T.Mesh(robeGeo(0.24 * bw, 0.44 * bw, 1.05), cloth(c.primary)), 0, 0.44, 0);
+      // Boots still show beneath robe hem
+      [-1, 1].forEach((s) => {
+        const boot = add(sphere(0.15 * bw, bootMat), s * 0.15 * bw, 0.15, 0.045); boot.scale.set(1, 0.85, 1.5);
+      });
     }
 
     // ---- torso ----
@@ -251,7 +254,7 @@
     buildHeadgear(addH, c.headgear, headR, secMat, primMat, trimMat, hairMat);
 
     // ---- cape ----
-    buildCape(g, c, bw);
+    buildCape(g, c, bw, headGroup);
     // ---- weapon / offhand ----
     buildWeapon(g, c.weapon, g.userData.handR, c);
     buildOffhand(g, c.offhand, g.userData.handL, c);
@@ -296,7 +299,7 @@
       case "short": cap(Math.PI * 0.56); break;
       case "swept": { const m = cap(Math.PI * 0.55); m.scale.set(1.05, 1, 1.1); m.position.z += 0.03; break; }
       case "messy": { cap(Math.PI * 0.58); for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; add(sphere(0.05, hairMat, 8), Math.cos(a) * headR * 0.7, 1.96 + Math.random() * 0.04, Math.sin(a) * headR * 0.7 - 0.01); } break; }
-      case "afro": { const a = add(sphere(headR * 1.42, smat(c.hairColor, { roughness: 0.95 }), 20), 0, 1.86, -0.01); break; }
+      case "afro": { add(sphere(headR * 1.12, smat(c.hairColor, { roughness: 0.95 }), 24), 0, 1.92, -0.01); break; }
       case "mohawk": { for (let i = 0; i < 6; i++) { const m = add(new T.Mesh(new T.BoxGeometry(0.07, 0.16 - i * 0.008, 0.11), hairMat), 0, 2.0, headR * 0.62 - i * (headR * 0.26)); m.rotation.x = -0.05; } break; }
       case "long": cap(Math.PI * 0.6); { const b = add(new T.Mesh(robeGeo(headR * 0.85, headR * 0.65, 0.45), hairMat), 0, 1.32, -0.06); b.scale.z = 0.7; } break;
       case "ponytail": cap(Math.PI * 0.52); strand(0, 1.6, -headR * 0.95, 0.055, 0.42); break;
@@ -373,24 +376,31 @@
     }
   }
 
-  function buildCape(g, c, bw) {
+  function buildCape(g, c, bw, headGroup) {
     if (!c.cape || c.cape === "none") return;
-    const len = c.cape === "long" || c.cape === "hooded" ? 1.0 : c.cape === "tattered" ? 0.9 : 0.62;
-    const geo = new T.PlaneGeometry(0.62 * bw, len, 8, 12);
+    const len = c.cape === "long" || c.cape === "hooded" ? 1.05 : c.cape === "tattered" ? 0.9 : 0.65;
+    const geo = new T.PlaneGeometry(0.64 * bw, len, 8, 14);
     const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i); pos.setZ(i, -Math.cos(x * 3.2) * 0.06 - (0.5 - (y / len + 0.5)) * 0.18); if (c.cape === "tattered" && y < -len * 0.2) pos.setX(i, x * (1 - (0.4 + 0.3 * Math.sin(x * 20)))); }
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i);
+      pos.setZ(i, -Math.cos(x * 3.0) * 0.07 - (0.5 - (y / len + 0.5)) * 0.22);
+      if (c.cape === "tattered" && y < -len * 0.2) pos.setX(i, x * (1 - (0.4 + 0.3 * Math.sin(x * 20))));
+    }
     geo.computeVertexNormals();
-    const mat = new T.MeshStandardMaterial({ color: c.capeColor, roughness: 0.85, metalness: 0, side: T.DoubleSide });
-    const cape = new T.Mesh(geo, mat); cape.position.set(0, 1.42, -0.16 * bw); cape.rotation.x = 0.12; cape.castShadow = true; g.add(cape);
+    const mat = new T.MeshStandardMaterial({ color: c.capeColor, roughness: 0.86, metalness: 0, side: T.DoubleSide });
+    // Lowered so cape top (y≈1.65) stays at neck, doesn't cut through head
+    const cape = new T.Mesh(geo, mat);
+    cape.position.set(0, 1.16, -0.17 * bw); cape.rotation.x = 0.08; cape.castShadow = true; g.add(cape);
     if (c.cape === "hooded") {
-      // Closed dome for hooded cape (thetaLength 0.5PI = upper hemisphere only, no open ring)
-      const hR = 0.25, hTh = Math.PI * 0.52;
+      const hR = 0.24, hTh = Math.PI * 0.52;
+      // Hood goes in headGroup if available so it follows head tilt
+      const addTo = headGroup || g;
       const hood = new T.Mesh(new T.SphereGeometry(hR, 24, 18, 0, Math.PI * 2, 0, hTh), mat);
-      hood.position.set(0, 1.80, -0.14); hood.scale.set(1.14, 1.22, 1.28); g.add(hood);
-      // Closing disc
-      const dR = Math.sin(hTh) * hR, dY = 1.80 + Math.cos(hTh) * hR;
-      const hd = new T.Mesh(new T.CircleGeometry(dR * 1.14, 22), mat);
-      hd.rotation.x = Math.PI / 2; hd.position.set(0, dY * 1.0, -0.14); g.add(hd);
+      const hoodLocalY = headGroup ? 1.80 - 1.65 : 1.80;
+      hood.position.set(0, hoodLocalY, -0.13); hood.scale.set(1.12, 1.18, 1.24); hood.castShadow = true; addTo.add(hood);
+      const dR = Math.sin(hTh) * hR, dY = hoodLocalY + Math.cos(hTh) * hR;
+      const hd = new T.Mesh(new T.CircleGeometry(dR * 1.1, 22), mat);
+      hd.rotation.x = Math.PI / 2; hd.position.set(0, dY, -0.13); addTo.add(hd);
     }
   }
 
@@ -405,7 +415,17 @@
       case "greatsword": grp.add(meshAt(capsuleGeo(0.026, 0.32), wood, 0, -0.04, 0)); grp.add(meshAt(new T.BoxGeometry(0.30, 0.04, 0.048), gold, 0, 0.15, 0)); grp.add(meshAt(bladeGeo(0.07, 1.15), steel, 0, 0.78, 0)); break;
       case "staff": grp.add(meshAt(capsuleGeo(0.03, 1.4), wood, 0, 0.35, 0)); grp.add(meshAt(new T.IcosahedronGeometry(0.09, 0), new T.MeshStandardMaterial({ color: "#7fd0ff", emissive: "#2a7dd0", emissiveIntensity: 0.9, roughness: 0.15 }), 0, 1.12, 0)); break;
       case "wand": grp.add(meshAt(capsuleGeo(0.018, 0.34), wood, 0, 0.12, 0)); grp.add(meshAt(sphereGeo(0.045), new T.MeshStandardMaterial({ color: "#e89cff", emissive: "#9a2ad0", emissiveIntensity: 0.9 }), 0, 0.32, 0)); break;
-      case "axe": grp.add(meshAt(capsuleGeo(0.028, 0.85), wood, 0, 0.3, 0)); { const blade = new T.Mesh(new T.CylinderGeometry(0.16, 0.16, 0.04, 24, 1, false, -0.6, 1.2), metal("#aab0ba", 0.3)); blade.rotation.x = Math.PI / 2; blade.position.set(0.08, 0.6, 0); grp.add(blade); } break;
+      case "axe":
+        grp.add(meshAt(capsuleGeo(0.028, 0.85), wood, 0, 0.3, 0));
+        { // Blade: wide arc at the top of the handle
+          const blade = new T.Mesh(new T.CylinderGeometry(0.20, 0.16, 0.05, 20, 1, false, -1.1, 2.2), metal("#aab0ba", 0.28));
+          blade.rotation.x = Math.PI / 2; blade.rotation.z = 0.1;
+          blade.position.set(0.1, 0.73, 0); grp.add(blade);
+          // Back edge of axe head
+          const back = new T.Mesh(new T.CylinderGeometry(0.06, 0.05, 0.04, 10, 1, false, 1.1, 1.3), metal("#9aa0ac", 0.35));
+          back.rotation.x = Math.PI / 2; back.position.set(-0.06, 0.73, 0); grp.add(back);
+        }
+        break;
       case "dagger": grp.add(meshAt(capsuleGeo(0.02, 0.12), wood, 0, 0, 0)); grp.add(meshAt(bladeGeo(0.05, 0.28), steel, 0, 0.2, 0)); break;
       case "mace": grp.add(meshAt(capsuleGeo(0.026, 0.55), wood, 0, 0.18, 0)); grp.add(meshAt(new T.IcosahedronGeometry(0.1, 0), metal("#8a909a", 0.35), 0, 0.52, 0)); break;
       case "spear": grp.add(meshAt(capsuleGeo(0.024, 1.5), wood, 0, 0.4, 0)); grp.add(meshAt(new T.ConeGeometry(0.06, 0.26, 10), steel, 0, 1.2, 0)); break;
