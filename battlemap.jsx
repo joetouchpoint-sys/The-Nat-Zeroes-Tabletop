@@ -757,6 +757,9 @@
     return React.createElement("div", { style: { position: "absolute", top: 14, left: 14, zIndex: 14, display: "flex", flexDirection: "column", gap: 8 } },
       // Standard tools (in 2D: full set; in 3D: just add-token)
       React.createElement("div", { className: "panel", style: { padding: 6, display: "flex", flexDirection: "column", gap: 4, background: "rgba(24,18,34,0.92)", backdropFilter: "blur(8px)" } },
+        // In 3D mode: show Select tool so user can return to orbit/drag after placing
+        view3d && React.createElement("button", { title: "Select / Move (return to orbit)", onClick: () => { setTool("select"); setShowObjects(false); setShowAoe(false); }, style: toolBtn(tool === "select") },
+          React.createElement(Icon, { name: "move", size: 19 })),
         !view3d && tools.map((t) => React.createElement("button", { key: t.id, title: t.label, onClick: () => { setTool(t.id); setShowObjects(false); setShowAoe(false); }, style: toolBtn(tool === t.id) },
           React.createElement(Icon, { name: t.icon, size: 19 }))),
         canEdit && React.createElement("div", { style: { height: 1, background: "var(--hair)", margin: "2px 4px" } }),

@@ -26,24 +26,27 @@
     return map[icon] || "✨";
   }
 
-  // ---- Stat card ----
+  // ---- Stat card — neon glow style ----
   function StatCard(props) {
     var s = props.s;
     var isDM = props.isDM;
     var onEdit = props.onEdit;
     var onDelete = props.onDelete;
+    var col = s.color || CZ_GOLD;
     return React.createElement("div", {
-      style: { background: CZ_SURFACE, borderRadius: 14, padding: "20px 16px", textAlign: "center",
-        border: "1px solid " + CZ_POP + "22", position: "relative" }
+      style: { background: "linear-gradient(135deg, " + CZ_SURFACE + " 60%, " + col + "0a 100%)",
+        borderRadius: 16, padding: "22px 16px", textAlign: "center",
+        border: "1px solid " + col + "44",
+        boxShadow: "0 0 20px " + col + "18, inset 0 0 20px rgba(0,0,0,0.2)",
+        position: "relative" }
     },
       isDM && React.createElement("div", { style: { position: "absolute", top: 8, right: 8, display: "flex", gap: 4 } },
-        React.createElement("button", { onClick: onEdit, title: "Edit",
-          style: { background: "none", border: "none", color: CZ_MUTED, cursor: "pointer", padding: 2, fontSize: 14 } }, "✏️"),
-        React.createElement("button", { onClick: onDelete, title: "Delete",
-          style: { background: "none", border: "none", color: "#ff6060", cursor: "pointer", padding: 2, fontSize: 14 } }, "🗑️")),
-      React.createElement("div", { style: { fontSize: 26, marginBottom: 4 } }, statEmoji(s.icon)),
-      React.createElement("div", { style: { fontFamily: "var(--mono)", fontSize: 38, fontWeight: 700, color: CZ_GOLD, lineHeight: 1 } }, s.value),
-      React.createElement("div", { style: { fontSize: 12.5, color: CZ_MUTED, marginTop: 6 } }, s.label)
+        React.createElement("button", { onClick: onEdit, style: { background: "none", border: "none", color: CZ_MUTED, cursor: "pointer", padding: 2, fontSize: 13 } }, "✏️"),
+        React.createElement("button", { onClick: onDelete, style: { background: "none", border: "none", color: "#ff6060", cursor: "pointer", padding: 2, fontSize: 13 } }, "🗑️")),
+      React.createElement("div", { style: { fontSize: 28, marginBottom: 6, filter: "drop-shadow(0 0 6px " + col + ")" } }, statEmoji(s.icon)),
+      React.createElement("div", { style: { fontFamily: "var(--mono)", fontSize: 44, fontWeight: 900, color: col, lineHeight: 1,
+        textShadow: "0 0 20px " + col + "88" } }, s.value),
+      React.createElement("div", { style: { fontSize: 12, color: CZ_MUTED, marginTop: 8, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "var(--display)" } }, s.label)
     );
   }
 
@@ -66,9 +69,11 @@
     var medals = ["🥇","🥈","🥉"];
 
     return React.createElement("div", {
-      style: { background: CZ_SURFACE, borderRadius: 16, padding: 22,
-        border: "1px solid " + CZ_POP + "33", display: "grid",
-        gridTemplateColumns: "1fr auto", gap: 20 }
+      style: { background: "linear-gradient(135deg, " + CZ_SURFACE + ", rgba(255,78,205,0.06))",
+        borderRadius: 18, padding: 22,
+        border: "1px solid " + CZ_POP + "44",
+        boxShadow: "0 4px 24px rgba(255,78,205,0.08)",
+        display: "grid", gridTemplateColumns: "1fr auto", gap: 20 }
     },
       React.createElement("div", null,
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 10 } },
@@ -576,16 +581,27 @@
     }
 
     return React.createElement("div", {
-      style: { height: "100%", minHeight: 0, overflowY: "auto", background: CZ_BG }
+      style: { height: "100%", minHeight: 0, overflowY: "auto",
+        background: "radial-gradient(ellipse 120% 60% at 50% -10%, rgba(255,78,205,0.18), transparent 60%), radial-gradient(ellipse 80% 50% at 80% 100%, rgba(0,229,204,0.12), transparent 60%), " + CZ_BG }
     },
       React.createElement("div", { style: { maxWidth: 1100, margin: "0 auto", padding: "28px 28px 60px" } },
 
-        React.createElement("div", { style: { textAlign: "center", marginBottom: 32 } },
-          React.createElement("div", { style: { fontFamily: "var(--mono)", fontSize: 11, letterSpacing: "0.35em", color: CZ_POP, marginBottom: 6 } }, "✦ AFTERSHOW ✦"),
-          React.createElement("h1", { style: { fontFamily: "var(--display)", fontSize: 42, fontWeight: 700, margin: 0, lineHeight: 1,
-            color: CZ_POP } }, "THE CHAT ZEROES"),
-          React.createElement("div", { style: { fontFamily: "var(--mono)", fontSize: 13, color: CZ_MUTED, marginTop: 8 } }, "Post-session chaos, bad takes & award ceremonies"),
-          React.createElement("div", { style: { height: 3, width: 120, margin: "14px auto 0", borderRadius: 2, background: CZ_POP } })),
+        // ===== Animated hero header =====
+        React.createElement("div", { style: { textAlign: "center", marginBottom: 36, position: "relative" } },
+          // Big glowing ring behind title
+          React.createElement("div", { style: { position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,78,205,0.12) 0%, transparent 70%)", pointerEvents: "none" } }),
+          React.createElement("div", { style: { fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.45em", color: CZ_POP, marginBottom: 10, opacity: 0.85 } }, "✦  AFTERSHOW  ✦"),
+          React.createElement("h1", { style: { fontFamily: "var(--display)", fontSize: 52, fontWeight: 700, margin: "0 0 4px",
+            background: "linear-gradient(135deg, " + CZ_GOLD + " 0%, " + CZ_POP + " 45%, " + CZ_TEAL + " 100%)",
+            WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+            textShadow: "none", letterSpacing: "0.04em", lineHeight: 1.05 } }, "THE CHAT ZEROES"),
+          React.createElement("div", { style: { fontFamily: "var(--mono)", fontSize: 13, color: CZ_MUTED, marginTop: 10, letterSpacing: "0.06em" } },
+            "Post-session chaos · bad takes · award ceremonies"),
+          // Animated divider
+          React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "16px auto 0", maxWidth: 320 } },
+            React.createElement("div", { style: { flex: 1, height: 1, background: "linear-gradient(90deg, transparent, " + CZ_POP + "88)" } }),
+            React.createElement("span", { style: { fontSize: 18, filter: "drop-shadow(0 0 8px " + CZ_POP + ")" } }, "🎙️"),
+            React.createElement("div", { style: { flex: 1, height: 1, background: "linear-gradient(90deg, " + CZ_POP + "88, transparent)" } }))),
 
         React.createElement("div", { style: { marginBottom: 32 } },
           React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },

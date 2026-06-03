@@ -3,6 +3,7 @@
   var ctx = null;
   function getCtx() {
     if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
+    if (ctx && ctx.state === "suspended") { try { ctx.resume(); } catch(e) {} }
     return ctx;
   }
 

@@ -86,6 +86,11 @@
     const [bestiary, setBestiary]       = useState(() => lsGet("nz_bestiary",     D.bestiary));
     const [customPaths, setCustomPaths] = useState(() => lsGet("nz_worldpaths",  []));
     const [riversideLink, setRiversideLink] = useState(() => lsGet("nz_riverside", ""));
+    const [musicUrl, setMusicUrl]           = useState(() => lsGet("nz_musicurl", ""));
+    const [musicOpen, setMusicOpen]         = useState(false);
+    const [musicPlaying, setMusicPlaying]   = useState(false);
+    const [soundsOn, setSoundsOn]           = useState(true);
+    useEffect(() => { lsSet("nz_musicurl", musicUrl); }, [musicUrl]);
     const [worldBgImg, setWorldBgImg] = useState(null);
     useEffect(() => { dbLoad("nz_worldbg", (img) => { if (img) setWorldBgImg(img); }); }, []);
     function saveWorldBg(img) { setWorldBgImg(img); dbSave("nz_worldbg", img || null); }
@@ -169,6 +174,22 @@
             React.createElement("button", { className: "acct-pill", onClick: () => setSwitchOpen(true), title: "Switch account" },
               React.createElement(Avatar, { name: user.name, ring: user.ring, size: 28 }),
               React.createElement("span", { className: "tag", style: { fontSize: 10, color: roleInfo.color, borderColor: roleInfo.color + "55", background: roleInfo.color + "1a" } }, roleInfo.short)),
+            // Sounds toggle
+            React.createElement("button", { className: "icon-btn", title: soundsOn ? "Mute UI sounds" : "Enable UI sounds",
+              onClick: () => { const on = window.NZSounds ? window.NZSounds.toggle() : false; setSoundsOn(on !== undefined ? on : !soundsOn); } },
+              React.createElement("span", { style: { fontSize: 16 } }, soundsOn ? "🔊" : "🔇")),
+            // Music player
+            React.createElement("div", { style: { position: "relative" } },
+              React.createElement("button", { className: "icon-btn", title: "Ambient music", onClick: () => setMusicOpen((x) => !x) },
+                React.createElement("span", { style: { fontSize: 16 } }, musicPlaying ? "🎵" : "🎶")),
+              musicOpen && React.createElement("div", { style: { position: "fixed", top: 66, right: 8, zIndex: 9999, background: "var(--surface)", border: "1px solid var(--hair)", borderRadius: 12, padding: 16, boxShadow: "var(--shadow-2)", minWidth: 280, display: "flex", flexDirection: "column", gap: 10 } },
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 600, fontSize: 13, color: "var(--gold)" } }, "🎵 Ambient Music"),
+                React.createElement("div", { className: "muted", style: { fontSize: 12 } }, "Paste a YouTube, Spotify, or SoundCloud URL. Opens in a new tab."),
+                React.createElement("input", { className: "input", value: musicUrl, onChange: (e) => setMusicUrl(e.target.value), placeholder: "https://youtube.com/watch?v=..." }),
+                React.createElement("div", { className: "row", style: { gap: 8 } },
+                  React.createElement("button", { className: "btn primary", disabled: !musicUrl, onClick: () => { window.open(musicUrl, "_blank"); setMusicPlaying(true); setMusicOpen(false); } }, "▶ Open"),
+                  React.createElement("button", { className: "btn ghost", onClick: () => { setMusicPlaying(false); setMusicOpen(false); } }, "Stop"),
+                  React.createElement("button", { className: "btn ghost sm", onClick: () => setMusicOpen(false) }, "✕")))),
             React.createElement("button", { className: "icon-btn", title: "Notifications" }, React.createElement(Icon, { name: "bell", size: 18 }))),
 
           React.createElement(ErrorBoundary, { key: view },

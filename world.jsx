@@ -168,6 +168,7 @@
     // Map inner style (zoom + 3D)
     const innerStyle = {
       position: "absolute", inset: 0,
+      zIndex: 2, // must be above WorldCanvas (zIndex:1) so pins/paths show
       transform: is3d
         ? `scale(${zoom}) perspective(900px) rotateX(42deg)`
         : `scale(${zoom})`,
