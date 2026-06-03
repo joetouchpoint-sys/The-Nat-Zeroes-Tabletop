@@ -48,6 +48,7 @@
     function selectChar(r) { setActiveId(r.id); setCfg(r.avatar); setName(r.name); setSaved(false); }
     function set(k, v) { setCfg((c) => ({ ...c, [k]: v })); setSaved(false); }
     function randomize() { setCfg(A.randomConfig()); setSaved(false); }
+    function resetToDefault() { if (confirm("Reset this character to a blank default?")) { setCfg({ ...A.DEFAULT }); setSaved(false); } }
     function save() {
       const updated = roster.map((r) => r.id === activeId ? { ...r, name, avatar: cfg } : r);
       setRoster(updated);
@@ -80,7 +81,8 @@
           : React.createElement("div", { ref: mountRef, style: { flex: 1, minHeight: 0 } }),
         React.createElement("div", { style: { position: "absolute", bottom: 78, left: "50%", transform: "translateX(-50%)", zIndex: 3, display: "flex", gap: 10 } },
           React.createElement("button", { className: "btn", onClick: randomize }, React.createElement(Icon, { name: "dice", size: 16 }), "Randomize"),
-          React.createElement("button", { className: "btn", onClick: () => viewerRef.current && viewerRef.current.resetView() }, React.createElement(Icon, { name: "settings", size: 16 }), "Reset view"),
+          React.createElement("button", { className: "btn ghost", onClick: resetToDefault }, "↺ Reset"),
+          React.createElement("button", { className: "btn", onClick: () => viewerRef.current && viewerRef.current.resetView() }, React.createElement(Icon, { name: "settings", size: 16 }), "Camera"),
           React.createElement("button", { className: "btn", onClick: () => {
             if (!viewerRef.current) return;
             const canvas = viewerRef.current.getCanvas && viewerRef.current.getCanvas();

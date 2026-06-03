@@ -42,9 +42,11 @@
     const [editLoc, setEditLoc] = useState(null);
     const [zoom, setZoom] = useState(1);
     const [is3d, setIs3d] = useState(false);
-    const [pathingFrom, setPathingFrom] = useState(null); // locId when drawing a path
+    const [pathingFrom, setPathingFrom] = useState(null);
+    const [pathWaypoints, setPathWaypoints] = useState([]); // [{x%, y%}] mid-points while drawing
     const [pathColor, setPathColor] = useState("#e8b54a");
     const [drawingPath, setDrawingPath] = useState(false);
+    const [draggingWaypoint, setDraggingWaypoint] = useState(null); // {pathId, idx, startX, startY, origX, origY, rectW, rectH}
     const bgInputRef = useRef(null);
     const mapContainerRef = useRef(null);
     const dragRef = useRef(null);
@@ -101,17 +103,64 @@
       window.removeEventListener("pointerup", onMapPointerUp);
     }
 
-    // Path drawing: click first loc, then second loc
+    // Path drawing: first pin → add waypoints by clicking map → second pin finishes
     function handlePinClick(locId) {
       if (drawingPath && canEdit) {
-        if (!pathingFrom) { setPathingFrom(locId); return; }
-        if (pathingFrom === locId) { setPathingFrom(null); return; }
-        setCustomPaths && setCustomPaths((ps) => [...ps, { id: "p" + Date.now(), from: pathingFrom, to: locId, color: pathColor }]);
-        setPathingFrom(null);
+        if (!pathingFrom) { setPathingFrom(locId); setPathWaypoints([]); return; }
+        if (pathingFrom === locId) { setPathingFrom(null); setPathWaypoints([]); return; }
+        // Finish path with any accumulated waypoints
+        setCustomPaths && setCustomPaths((ps) => [...ps, {
+          id: "p" + Date.now(), from: pathingFrom, to: locId, color: pathColor,
+          waypoints: pathWaypoints
+        }]);
+        setPathingFrom(null); setPathWaypoints([]);
         return;
       }
       setSel(locId === sel ? null : locId);
     }
+
+    // Click on map (not a pin) while drawing → add waypoint
+    function handleMapClick(e) {
+      if (!drawingPath || !pathingFrom || !canEdit) return;
+      if (e.target.closest("button") || e.target.closest(".path-ctrl")) return;
+      const rect = mapContainerRef.current.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width / zoom) * 100;
+      const y = ((e.clientY - rect.top) / rect.height / zoom) * 100;
+      setPathWaypoints((ws) => [...ws, { x: Math.max(2, Math.min(98, x)), y: Math.max(2, Math.min(98, y)) }]);
+    }
+
+    // Drag waypoints on existing paths
+    function onWaypointPointerDown(e, pathId, idx) {
+      if (!canEdit) return;
+      e.preventDefault(); e.stopPropagation();
+      const rect = mapContainerRef.current.getBoundingClientRect();
+      const path = paths.find((p) => p.id === pathId);
+      const wp = path && path.waypoints && path.waypoints[idx];
+      if (!wp) return;
+      setDraggingWaypoint({ pathId, idx, startX: e.clientX, startY: e.clientY, origX: wp.x, origY: wp.y, rectW: rect.width, rectH: rect.height });
+      window.addEventListener("pointermove", onWaypointMove);
+      window.addEventListener("pointerup", onWaypointUp);
+    }
+    function onWaypointMove(e) {
+      if (!draggingWaypoint) return;
+      const d = draggingWaypoint;
+      const dx = (e.clientX - d.startX) / (d.rectW * zoom) * 100;
+      const dy = (e.clientY - d.startY) / (d.rectH * zoom) * 100;
+      const nx = Math.max(2, Math.min(98, d.origX + dx));
+      const ny = Math.max(2, Math.min(98, d.origY + dy));
+      setCustomPaths && setCustomPaths((ps) => ps.map((p) => {
+        if (p.id !== d.pathId) return p;
+        const wps = [...(p.waypoints || [])];
+        wps[d.idx] = { x: nx, y: ny };
+        return { ...p, waypoints: wps };
+      }));
+    }
+    function onWaypointUp() {
+      setDraggingWaypoint(null);
+      window.removeEventListener("pointermove", onWaypointMove);
+      window.removeEventListener("pointerup", onWaypointUp);
+    }
+
     function deletePath(id) { setCustomPaths && setCustomPaths((ps) => ps.filter((p) => p.id !== id)); }
 
     const selLoc = locs.find((l) => l.id === sel);
@@ -128,7 +177,7 @@
 
     return React.createElement("div", { style: { display: "grid", gridTemplateColumns: selLoc ? "1fr 360px" : "1fr", height: "100%", minHeight: 0 } },
       // ===== Map stage =====
-      React.createElement("div", { ref: mapContainerRef, style: { position: "relative", minWidth: 0, overflow: "hidden", background: is3d ? "#0a0d14" : "#0c1418" } },
+      React.createElement("div", { ref: mapContainerRef, onClick: handleMapClick, style: { position: "relative", minWidth: 0, overflow: "hidden", background: is3d ? "#0a0d14" : "#0c1418", cursor: drawingPath && pathingFrom ? "crosshair" : "default" } },
         // Inner zoomable/tiltable content
         React.createElement("div", { style: innerStyle },
           React.createElement(WorldCanvas, { bgImg, is3d }),
@@ -139,21 +188,42 @@
             // Auto routes between consecutive discovered locs
             routePairs(discovered).map(([a, b], i) => React.createElement("line", { key: "auto" + i, x1: a.x + "%", y1: a.y + "%", x2: b.x + "%", y2: b.y + "%",
               stroke: "rgba(232,181,74,0.28)", strokeWidth: 1.5, strokeDasharray: "5 7" })),
-            // Custom paths
+            // In-progress path preview while drawing
+            pathingFrom && pathWaypoints.length > 0 && (function() {
+              const fromLoc = locs.find((l) => l.id === pathingFrom);
+              if (!fromLoc) return null;
+              const pts = [[fromLoc.x, fromLoc.y], ...pathWaypoints.map((w) => [w.x, w.y])];
+              return React.createElement("polyline", { points: pts.map(([x, y]) => x + "% " + y + "%").join(", "),
+                fill: "none", stroke: pathColor, strokeWidth: 2, strokeDasharray: "6 4", opacity: 0.6 });
+            })(),
+            // Custom paths — rendered as polylines through waypoints
             paths.map((p) => {
               const fromLoc = locs.find((l) => l.id === p.from);
               const toLoc = locs.find((l) => l.id === p.to);
               if (!fromLoc || !toLoc) return null;
+              const wps = p.waypoints || [];
+              const allPts = [[fromLoc.x, fromLoc.y], ...wps.map((w) => [w.x, w.y]), [toLoc.x, toLoc.y]];
+              const midIdx = Math.floor(allPts.length / 2);
+              const [mx, my] = allPts[midIdx];
+              const col = p.color || "#e8b54a";
               return React.createElement(React.Fragment, { key: p.id },
-                React.createElement("line", { x1: fromLoc.x + "%", y1: fromLoc.y + "%", x2: toLoc.x + "%", y2: toLoc.y + "%",
-                  stroke: p.color || "#e8b54a", strokeWidth: 2.5, strokeDasharray: "8 5",
-                  style: { filter: "drop-shadow(0 0 3px " + (p.color || "#e8b54a") + "88)" } }),
-                canEdit && React.createElement("circle", { cx: ((fromLoc.x + toLoc.x) / 2) + "%", cy: ((fromLoc.y + toLoc.y) / 2) + "%", r: 7,
-                  fill: "rgba(24,18,34,0.9)", stroke: p.color || "#e8b54a", strokeWidth: 1.5, style: { cursor: "pointer" },
-                  onClick: () => deletePath(p.id) }),
-                canEdit && React.createElement("text", { x: ((fromLoc.x + toLoc.x) / 2) + "%", y: ((fromLoc.y + toLoc.y) / 2) + "%",
-                  textAnchor: "middle", dominantBaseline: "middle", fontSize: 10, fill: "#fff", style: { cursor: "pointer", userSelect: "none" },
-                  onClick: () => deletePath(p.id) }, "×"));
+                React.createElement("polyline", { points: allPts.map(([x, y]) => x + "% " + y + "%").join(", "),
+                  fill: "none", stroke: col, strokeWidth: 2.5, strokeDasharray: "8 5",
+                  style: { filter: "drop-shadow(0 0 3px " + col + "88)", pointerEvents: "none" } }),
+                // Delete button at midpoint
+                canEdit && React.createElement("circle", { cx: mx + "%", cy: my + "%", r: 7,
+                  fill: "rgba(24,18,34,0.92)", stroke: col, strokeWidth: 1.5, style: { cursor: "pointer", pointerEvents: "all" },
+                  onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }),
+                canEdit && React.createElement("text", { x: mx + "%", y: my + "%",
+                  textAnchor: "middle", dominantBaseline: "middle", fontSize: 10, fill: "#fff",
+                  style: { cursor: "pointer", userSelect: "none", pointerEvents: "all" },
+                  onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }, "×"),
+                // Draggable waypoint dots
+                canEdit && wps.map((wp, i) => React.createElement("circle", { key: i, cx: wp.x + "%", cy: wp.y + "%", r: 5,
+                  fill: col, stroke: "#fff", strokeWidth: 1.5,
+                  style: { cursor: "grab", pointerEvents: "all" },
+                  className: "path-ctrl",
+                  onPointerDown: (e) => onWaypointPointerDown(e, p.id, i) })));
             }).filter(Boolean)),
           // Parchment border overlay
           React.createElement(ParchmentBorder, null),
@@ -188,9 +258,11 @@
               React.createElement(Icon, { name: "upload", size: 14 }), "Map image"),
             // Path drawing mode
             React.createElement("button", { className: "btn sm" + (drawingPath ? " primary" : " ghost"),
-              title: drawingPath ? "Click 2 pins to connect them" : "Draw a path between locations",
-              onClick: () => { setDrawingPath((x) => !x); setPathingFrom(null); } },
-              "〜 " + (drawingPath ? (pathingFrom ? "click second pin…" : "click first pin…") : "Draw path")),
+              title: drawingPath ? "Click a pin to start, click map to add bends, click a second pin to finish" : "Draw a path between locations",
+              onClick: () => { setDrawingPath((x) => !x); setPathingFrom(null); setPathWaypoints([]); } },
+              "〜 " + (drawingPath
+                ? (pathingFrom ? ("+" + pathWaypoints.length + " pts · click pin to end") : "click start pin…")
+                : "Draw path")),
             drawingPath && React.createElement("div", { style: { display: "flex", gap: 4 } },
               PATH_COLORS.map((c) => React.createElement("button", { key: c, onClick: () => setPathColor(c),
                 style: { width: 18, height: 18, borderRadius: "50%", background: c, border: "2px solid " + (pathColor === c ? "#fff" : "transparent"), cursor: "pointer" } }))),

@@ -147,6 +147,7 @@
       // Upper arm: slight outward + forward tilt (natural relaxed pose)
       const upper = add(limb(0.082 * bw, 0.34, armMat), s * (shoulderX + 0.04), 1.27, 0.02);
       upper.rotation.z = s * 0.12; upper.rotation.x = 0.08;
+      upper.name = s < 0 ? "armL" : "armR"; // tag for breathing animation
       // Forearm: angled more forward — brings hand in front of torso
       const fore = add(limb(0.072 * bw, 0.32, c.gloves ? secMat : skinMat.clone()), s * (shoulderX + 0.08), 0.93, 0.08);
       fore.rotation.z = s * 0.14; fore.rotation.x = 0.18;
@@ -559,11 +560,23 @@
       if (spin) targetRotY += 0.0035;
       rotY += (targetRotY - rotY) * 0.1; pivot.rotation.y = rotY;
 
-      // Subtle breathing / idle animation
+      // Breathing / idle animation — chest, head bob, arm sway
       const t = performance.now() * 0.001;
-      pivot.scale.y = 1 + Math.sin(t * 0.55) * 0.009;
-      pivot.position.y = Math.sin(t * 0.55) * 0.007;
-      pivot.rotation.z = Math.sin(t * 0.28) * 0.008;
+      const breathe = Math.sin(t * 0.55);
+      const sway = Math.sin(t * 0.28);
+      const headBob = Math.sin(t * 0.4);
+      // Chest rise
+      pivot.scale.y = 1 + breathe * 0.012;
+      pivot.position.y = breathe * 0.008;
+      // Gentle side sway
+      pivot.rotation.z = sway * 0.012;
+      // Slight forward lean cycle
+      pivot.rotation.x = headBob * 0.006;
+      // Animate arm meshes if available (tagged as armL/armR during build)
+      const armL = pivot.getObjectByName("armL");
+      const armR = pivot.getObjectByName("armR");
+      if (armL) armL.rotation.x = breathe * 0.04;
+      if (armR) armR.rotation.x = -breathe * 0.04;
 
 
       camera.position.set(0, 1.45, dist); camera.lookAt(0, 1.02, 0);

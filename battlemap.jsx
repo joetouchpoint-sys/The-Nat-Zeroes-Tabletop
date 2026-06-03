@@ -189,11 +189,7 @@
     // ---- Firebase real-time sync ----
     React.useEffect(() => {
       if (!roomCode || !window.NZFirebase) return;
-      // Set own presence
-      const presenceKey = ctx.user ? (ctx.user.id || ctx.user.name.replace(/[^a-z0-9]/gi, "_")) : "unknown";
-      window.NZFirebase.setPresence(presenceKey, { name: ctx.user ? ctx.user.name : "Unknown", role: ctx.role, ring: ctx.user ? ctx.user.ring : "#9170f0", ts: Date.now() });
-      // Watch presence (connected players)
-      window.NZFirebase.watchPresence((data) => { setPresence(data || {}); });
+      // joinRoom first (sets currentCode), then presence
       window.NZFirebase.joinRoom(roomCode, (data) => {
         syncIncoming.current = true;
         try {
@@ -208,10 +204,25 @@
             setRound(data.initiative.round || 1);
             setTurnIdx(data.initiative.turnIdx || 0);
           }
+          // Sync map list (adds any maps the DM has that players don't)
+          if (data.maps) {
+            const incoming = JSON.parse(data.maps);
+            setMapList((current) => {
+              const currentIds = new Set(current.map((m) => m.id));
+              const toAdd = incoming.filter((m) => !currentIds.has(m.id));
+              return toAdd.length ? [...current, ...toAdd] : current;
+            });
+          }
+          // DM switching active map — all players follow
+          if (data.activeMapId) setActiveMapId(data.activeMapId);
         } catch(e) {}
         setTimeout(() => { syncIncoming.current = false; }, 250);
       });
-      return () => { if (window.NZFirebase) window.NZFirebase.leaveRoom(); };
+      // Set own presence AFTER joinRoom has set currentCode
+      const presenceKey = ctx.user ? ctx.user.name.replace(/[^a-z0-9]/gi, "_").toLowerCase() : "unknown";
+      window.NZFirebase.setPresence(presenceKey, { name: ctx.user ? ctx.user.name : "Unknown", role: ctx.role, ring: ctx.user ? ctx.user.ring : "#9170f0", ts: Date.now() });
+      window.NZFirebase.watchPresence((data) => { setPresence(data || {}); });
+      return () => { if (window.NZFirebase) { window.NZFirebase.leaveRoom(); } setPresence({}); };
     }, [roomCode]);
 
     // Debounced Firebase writes when state changes
@@ -219,12 +230,21 @@
       if (!roomCode || !window.NZFirebase || syncIncoming.current) return;
       const fogSerial = {};
       Object.keys(fogByMap).forEach((k) => { fogSerial[k] = [...fogByMap[k]]; });
+      // Include mapList (with custom map images so players see them)
+      // and activeMapId so DM can switch maps for everyone
+      const defaultIds = new Set(maps.map((m) => m.id));
+      const sharedMaps = mapList.map((m) => ({
+        id: m.id, name: m.name, cols: m.cols, rows: m.rows, bg: m.bg, note: m.note || "",
+        img: defaultIds.has(m.id) ? null : (m.img || null) // share custom map images
+      }));
       window.NZFirebase.push({
         tokens: JSON.stringify(tokensByMap),
         fog: JSON.stringify(fogSerial),
         initiative: { round, turnIdx },
+        activeMapId: activeMapId,
+        maps: JSON.stringify(sharedMaps),
       });
-    }, [tokensByMap, fogByMap, round, turnIdx, roomCode]);
+    }, [tokensByMap, fogByMap, round, turnIdx, roomCode, activeMapId, mapList]);
 
     // Keyboard shortcut event listeners
     React.useEffect(() => {
@@ -447,30 +467,31 @@
           canEdit && React.createElement("button", { className: "btn sm ghost", style: { flex: "none" }, onClick: () => setUploadOpen(true) },
             React.createElement(Icon, { name: "upload", size: 15 }), "Upload map"),
           // ---- Session sync button ----
-          window.NZFirebase && React.createElement("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 6, marginLeft: 8 } },
+          window.NZFirebase && React.createElement("div", { style: { flex: "none", display: "flex", alignItems: "center", gap: 6, marginLeft: 8, position: "relative" } },
             roomCode
-              ? React.createElement(React.Fragment, null,
-                  // Room code badge
-                  React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, background: "rgba(79,185,138,0.15)", border: "1px solid var(--emerald)", borderRadius: 100, padding: "4px 12px", fontSize: 13 } },
-                    React.createElement("span", { style: { width: 8, height: 8, borderRadius: "50%", background: "var(--emerald)", animation: "glowpulse 1.6s ease-in-out infinite" } }),
-                    React.createElement("span", { className: "mono", style: { fontWeight: 700, color: "var(--emerald)", letterSpacing: "0.1em", cursor: "pointer" }, title: "Click to copy invite code", onClick: () => navigator.clipboard.writeText(roomCode) }, roomCode),
-                    React.createElement("button", { onClick: () => { if (window.NZFirebase) window.NZFirebase.leaveRoom(); setRoomCode(null); setPresence({}); }, style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", fontSize: 14, padding: 0, marginLeft: 2 } }, "✕")),
-                  // Connected players presence avatars
-                  Object.values(presence).length > 0 && React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 3 } },
-                    Object.entries(presence).slice(0, 8).map(([key, p]) => React.createElement("div", { key: key, title: p.name + " (" + p.role + ")", style: { width: 26, height: 26, borderRadius: "50%", background: p.ring || "#9170f0", border: "2px solid rgba(255,255,255,0.3)", display: "grid", placeItems: "center", fontSize: 10, fontWeight: 700, color: "#fff", fontFamily: "var(--mono)", overflow: "hidden", flexShrink: 0 } },
-                      (p.name || "?").slice(0, 2).toUpperCase()))))
+              ? React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, background: "rgba(79,185,138,0.15)", border: "1px solid var(--emerald)", borderRadius: 100, padding: "4px 12px", fontSize: 13 } },
+                  React.createElement("span", { style: { width: 8, height: 8, borderRadius: "50%", background: "var(--emerald)", animation: "glowpulse 1.6s ease-in-out infinite" } }),
+                  React.createElement("span", { className: "mono", style: { fontWeight: 700, color: "var(--emerald)", letterSpacing: "0.1em" } }, roomCode),
+                  React.createElement("button", { title: "Copy code", onClick: () => navigator.clipboard.writeText(roomCode), style: { background: "none", border: "none", color: "var(--emerald)", cursor: "pointer", fontSize: 13, padding: "0 2px" } }, "⧉"),
+                  React.createElement("span", { style: { color: "var(--ink-dim)", fontSize: 12 } }, Object.keys(presence).length + " connected"),
+                  React.createElement("button", { onClick: () => { if (window.NZFirebase) window.NZFirebase.leaveRoom(); setRoomCode(null); setPresence({}); }, style: { background: "none", border: "none", color: "var(--ink-dim)", cursor: "pointer", fontSize: 14, padding: 0, marginLeft: 2 } }, "✕"))
               : React.createElement("button", { className: "btn sm ghost", onClick: () => setRoomOpen((x) => !x) },
-                  React.createElement(Icon, { name: "party", size: 15 }), "Share session"),
-            roomOpen && !roomCode && React.createElement("div", { style: { position: "absolute", top: 50, right: 140, zIndex: 50, background: "var(--surface)", border: "1px solid var(--hair)", borderRadius: 12, padding: 16, boxShadow: "var(--shadow-2)", minWidth: 260, display: "flex", flexDirection: "column", gap: 10 } },
-              React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 600, fontSize: 13, color: "var(--gold)" } }, "Live Session Sync"),
-              React.createElement("div", { className: "muted", style: { fontSize: 12 } }, "Share a code so everyone sees the same map in real time."),
+                  React.createElement(Icon, { name: "party", size: 15 }), canEdit ? "Create session" : "Join session"),
+            roomOpen && !roomCode && React.createElement("div", { style: { position: "absolute", top: 42, right: 0, zIndex: 50, background: "var(--surface)", border: "1px solid var(--hair)", borderRadius: 12, padding: 16, boxShadow: "var(--shadow-2)", minWidth: 280, display: "flex", flexDirection: "column", gap: 10 } },
+              React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 600, fontSize: 13, color: "var(--gold)" } }, canEdit ? "Create a Session" : "Join a Session"),
+              React.createElement("div", { className: "muted", style: { fontSize: 12 } }, canEdit ? "Generate a code, share it with your players." : "Enter the code Callum shared with you."),
+              // DM: generate code section
+              canEdit && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, background: "var(--surface-2)", borderRadius: 8, padding: 10 } },
+                React.createElement("div", { style: { fontSize: 11, color: "var(--ink-dim)", fontFamily: "var(--display)", letterSpacing: "0.1em" } }, "YOUR SESSION CODE"),
+                React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+                  React.createElement("span", { className: "mono", style: { fontSize: 22, fontWeight: 900, letterSpacing: "0.18em", color: "var(--gold)", flex: 1 } }, roomInput || "—"),
+                  roomInput && React.createElement("button", { className: "btn sm ghost", onClick: () => navigator.clipboard.writeText(roomInput), title: "Copy code" }, "⧉ Copy"),
+                  React.createElement("button", { className: "btn sm primary", onClick: () => { const c = Math.random().toString(36).slice(2, 8).toUpperCase(); setRoomInput(c); } }, roomInput ? "↻ New" : "✨ Generate")),
+                roomInput && React.createElement("div", { style: { fontSize: 11, color: "var(--ink-dim)" } }, "Share this code in Discord. Players can join immediately.")),
+              // Join section (both DM and players)
               React.createElement("div", { style: { display: "flex", gap: 8 } },
-                React.createElement("input", { className: "input", placeholder: "Enter or paste code", value: roomInput, onChange: (e) => setRoomInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6)), style: { flex: 1, fontFamily: "var(--mono)", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase" }, maxLength: 6 }),
-                React.createElement("button", { className: "btn primary sm", disabled: roomInput.length < 4, onClick: () => { setRoomCode(roomInput); setRoomOpen(false); } }, "Join")),
-              canEdit && React.createElement("button", { className: "btn ghost sm", style: { textAlign: "center" }, onClick: () => { const c = Math.random().toString(36).slice(2, 8).toUpperCase(); setRoomInput(c); setRoomCode(c); setRoomOpen(false); } }, "✨ Generate new code (DM)"),
-              roomInput.length >= 4 && React.createElement("div", { style: { fontSize: 11, color: "var(--ink-dim)", textAlign: "center" } },
-                "Share this code with your group: ",
-                React.createElement("span", { className: "mono", style: { color: "var(--gold)", fontWeight: 700, letterSpacing: "0.1em" } }, roomInput)),
+                React.createElement("input", { className: "input", placeholder: "Paste code to join…", value: roomInput, onChange: (e) => setRoomInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6)), style: { flex: 1, fontFamily: "var(--mono)", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", fontSize: 15 }, maxLength: 6, autoFocus: !canEdit }),
+                React.createElement("button", { className: "btn primary sm", disabled: roomInput.length < 4, onClick: () => { setRoomCode(roomInput); setRoomOpen(false); } }, "Connect")),
               React.createElement("button", { className: "btn ghost sm", onClick: () => setRoomOpen(false) }, "Cancel"))),
           React.createElement("div", { style: { flex: "none", display: "flex", gap: 4, marginLeft: 4, background: "var(--surface)", border: "1px solid var(--hair)", borderRadius: 100, padding: 3 } },
             React.createElement("button", { onClick: () => setView3d(false), style: dimToggle(!view3d) }, "2D"),
@@ -615,7 +636,20 @@
           // dice toggle button
           React.createElement("button", { className: "btn primary", style: { position: "absolute", right: 18, bottom: 18, zIndex: 35, padding: "11px 16px", display: diceOpen ? "none" : "inline-flex" }, onClick: () => setDiceOpen(true) },
             React.createElement(Icon, { name: "dice", size: 18 }), "Roll dice"),
-          React.createElement(window.DiceTray, { open: diceOpen, onClose: () => setDiceOpen(false) })
+          React.createElement(window.DiceTray, { open: diceOpen, onClose: () => setDiceOpen(false) }),
+          // ---- In Party panel (bottom left) ----
+          roomCode && React.createElement("div", { style: { position: "absolute", left: 14, bottom: 18, zIndex: 30, background: "rgba(24,18,34,0.95)", border: "1px solid var(--emerald)", borderRadius: 12, padding: "10px 14px", backdropFilter: "blur(8px)", minWidth: 160 } },
+            React.createElement("div", { style: { fontSize: 10, fontFamily: "var(--display)", letterSpacing: "0.18em", color: "var(--emerald)", marginBottom: 8 } }, "IN PARTY"),
+            Object.keys(presence).length === 0
+              ? React.createElement("div", { className: "muted", style: { fontSize: 12, fontStyle: "italic" } }, "Waiting for players…")
+              : React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 5 } },
+                  Object.entries(presence).map(([key, p]) => React.createElement("div", { key, style: { display: "flex", alignItems: "center", gap: 8 } },
+                    React.createElement("div", { style: { width: 22, height: 22, borderRadius: "50%", background: p.ring || "#9170f0", border: "2px solid rgba(255,255,255,0.25)", display: "grid", placeItems: "center", fontSize: 9, fontWeight: 700, color: "#fff", fontFamily: "var(--mono)", flexShrink: 0 } },
+                      (p.name || "?").slice(0, 2).toUpperCase()),
+                    React.createElement("div", { className: "col", style: { minWidth: 0 } },
+                      React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, p.name || "Unknown"),
+                      React.createElement("div", { style: { fontSize: 10, color: "var(--ink-dim)" } }, p.role || "")),
+                    React.createElement("div", { style: { width: 7, height: 7, borderRadius: "50%", background: "var(--emerald)", flexShrink: 0 } })))))
         )
       ),
       // ===== RIGHT: initiative panel =====
@@ -631,12 +665,22 @@
 
   function RiversideBar({ link, canEdit, editing, setEditing, onSave }) {
     const [val, setVal] = React.useState(link);
-    React.useEffect(() => { setVal(link); }, [link]);
+    const [collapsed, setCollapsed] = React.useState(false);
     const [copied, setCopied] = React.useState(false);
+    React.useEffect(() => { setVal(link); }, [link]);
     function copy() { navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }
     if (!link && !canEdit) return null;
-    return React.createElement("div", { style: { gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, padding: "8px 18px", borderTop: "1px solid var(--hair)", background: "rgba(13,10,20,0.85)", backdropFilter: "blur(6px)", zIndex: 20 } },
-      React.createElement("span", { style: { fontFamily: "var(--display)", fontSize: 11, letterSpacing: "0.18em", color: "var(--gold-deep)", whiteSpace: "nowrap" } }, "🏰 RIVERSIDE LINK"),
+
+    // Collapsed: just a small tab at the bottom
+    if (collapsed) {
+      return React.createElement("div", { style: { gridColumn: "1 / -1", display: "flex", justifyContent: "flex-start", padding: "0 18px", background: "rgba(13,10,20,0.7)", borderTop: "1px solid var(--hair)", zIndex: 20 } },
+        React.createElement("button", { onClick: () => setCollapsed(false), title: "Show Riverside Link", style: { background: "none", border: "none", color: "var(--gold-deep)", cursor: "pointer", fontSize: 11, fontFamily: "var(--display)", letterSpacing: "0.14em", padding: "5px 0" } },
+          "🏰 RIVERSIDE ▲"));
+    }
+
+    return React.createElement("div", { style: { gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, padding: "7px 18px", borderTop: "1px solid var(--hair)", background: "rgba(13,10,20,0.85)", backdropFilter: "blur(6px)", zIndex: 20 } },
+      React.createElement("button", { onClick: () => setCollapsed(true), title: "Minimise", style: { background: "none", border: "none", color: "var(--ink-faint)", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 } }, "▼"),
+      React.createElement("span", { style: { fontFamily: "var(--display)", fontSize: 11, letterSpacing: "0.18em", color: "var(--gold-deep)", whiteSpace: "nowrap" } }, "🏰 RIVERSIDE"),
       editing
         ? React.createElement(React.Fragment, null,
             React.createElement("input", { autoFocus: true, className: "input", value: val, onChange: (e) => setVal(e.target.value), style: { flex: 1, fontSize: 13 }, placeholder: "Paste a URL or type a note…" }),
@@ -645,8 +689,8 @@
         : React.createElement(React.Fragment, null,
             link
               ? React.createElement("a", { href: link.startsWith("http") ? link : undefined, target: "_blank", rel: "noopener", style: { flex: 1, fontSize: 13, color: "var(--gold)", textDecoration: link.startsWith("http") ? "underline" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, link)
-              : React.createElement("span", { className: "muted", style: { flex: 1, fontSize: 13, fontStyle: "italic" } }, "No link set"),
-            link && React.createElement("button", { className: "btn sm ghost", onClick: copy }, copied ? "✓ Copied!" : React.createElement(Icon, { name: "upload", size: 14 })),
+              : React.createElement("span", { className: "muted", style: { flex: 1, fontSize: 13, fontStyle: "italic" } }, "No link set — click Edit to add one"),
+            link && React.createElement("button", { className: "btn sm ghost", onClick: copy }, copied ? "✓ Copied!" : "⧉ Copy"),
             canEdit && React.createElement("button", { className: "btn sm ghost", onClick: () => setEditing(true) }, React.createElement(Icon, { name: "settings", size: 13 }), "Edit")));
   }
 
