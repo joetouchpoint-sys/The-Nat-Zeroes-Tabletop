@@ -53,7 +53,7 @@
     }
   }
 
-  function BattleMap({ maps, party, bestiary, dm, initialMapId, riversideLink, setRiversideLink }) {
+  function BattleMap({ maps, party, bestiary, dm, initialMapId, riversideLink, setRiversideLink, worldBgImg, onWorldBgChange }) {
     const ctx = useContext(window.NZAuth.RoleContext);
     const canEdit = ctx.can("fog");        // DM / admin
     const canMove = ctx.can("moveTokens"); // DM / admin / player
@@ -204,16 +204,26 @@
             setRound(data.initiative.round || 1);
             setTurnIdx(data.initiative.turnIdx || 0);
           }
-          // Sync map list (adds any maps the DM has that players don't)
+          // Sync map list — update existing maps that are missing img, and add new ones
           if (data.maps) {
             const incoming = JSON.parse(data.maps);
-            setMapList((current) => {
-              const currentIds = new Set(current.map((m) => m.id));
-              const toAdd = incoming.filter((m) => !currentIds.has(m.id));
-              return toAdd.length ? [...current, ...toAdd] : current;
+            const incomingById = {};
+            incoming.forEach(function(m) { incomingById[m.id] = m; });
+            setMapList(function(current) {
+              // Update any existing map that has no img but incoming has one
+              const updated = current.map(function(m) {
+                const inc = incomingById[m.id];
+                if (inc && inc.img && !m.img) return Object.assign({}, m, { img: inc.img });
+                return m;
+              });
+              const currentIds = new Set(current.map(function(m) { return m.id; }));
+              const toAdd = incoming.filter(function(m) { return !currentIds.has(m.id); });
+              return toAdd.length ? [...updated, ...toAdd] : updated;
             });
           }
-          // DM switching active map — all players follow
+          // World map background
+          if (data.worldBg && onWorldBgChange) onWorldBgChange(data.worldBg);
+          // DM switching active map — all players follow (set AFTER mapList so map is ready)
           if (data.activeMapId) setActiveMapId(data.activeMapId);
         } catch(e) {}
         setTimeout(() => { syncIncoming.current = false; }, 250);
@@ -243,8 +253,9 @@
         initiative: { round, turnIdx },
         activeMapId: activeMapId,
         maps: JSON.stringify(sharedMaps),
+        worldBg: worldBgImg || null,
       });
-    }, [tokensByMap, fogByMap, round, turnIdx, roomCode, activeMapId, mapList]);
+    }, [tokensByMap, fogByMap, round, turnIdx, roomCode, activeMapId, mapList, worldBgImg]);
 
     // Keyboard shortcut event listeners
     React.useEffect(() => {

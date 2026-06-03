@@ -151,31 +151,60 @@
     // belt
     add(new T.Mesh(new T.TorusGeometry(0.22 * bw, 0.035, 10, 28), trimMat), 0, 0.96, 0).scale.set(1, 1, 0.78);
 
-    // ---- shoulders / arms ----
+    // ---- shoulders / arms — Group-based so all segments move together ----
     const armMat = c.outfit === "plate" ? metal(c.primary, 0.4) : (c.outfit === "robe" ? cloth(c.primary) : primMat);
     const shoulderX = 0.30 * bw;
     [-1, 1].forEach((s) => {
+      // Shoulder cap (stays on body)
       add(sphere(0.115 * bw, armMat), s * shoulderX, 1.46, 0.02);
       if (c.shoulders) { const pad = add(sphere(0.15 * bw, c.outfit === "plate" ? trimMat : secMat), s * shoulderX, 1.5, 0); pad.scale.set(1.1, 0.8, 1.1); }
-      // Upper arm: slight outward + forward tilt (natural relaxed pose)
+
+      // Pose values
       const armRaise = s < 0 ? (c.poseArmLRaise || 0) : (c.poseArmRRaise || 0);
       const armOut   = s < 0 ? (c.poseArmLOut  || 0) : (c.poseArmROut  || 0);
-      const upper = add(limb(0.082 * bw, 0.34, armMat), s * (shoulderX + 0.04), 1.27, 0.02);
-      upper.rotation.z = s * (0.12 + armOut * 0.6);
-      upper.rotation.x = 0.08 + armRaise * 0.8;
-      upper.name = s < 0 ? "armL" : "armR"; // tag for breathing animation
-      // Forearm: angled more forward — brings hand in front of torso
-      const fore = add(limb(0.072 * bw, 0.32, c.gloves ? secMat : skinMat.clone()), s * (shoulderX + 0.08), 0.93, 0.08);
+
+      // Shoulder joint Group — pivot at shoulder so whole arm swings together
+      const armGroup = new T.Group();
+      armGroup.position.set(s * shoulderX, 1.50, 0.02);
+      armGroup.rotation.x = armRaise * -1.4;    // negative = raise arm up
+      armGroup.rotation.z = s * armOut * 1.4;   // spread sideways
+      g.add(armGroup);
+
+      // Upper arm hangs from shoulder joint
+      const upper = new T.Mesh(capsuleGeo(0.082 * bw, 0.34, 28), armMat);
+      upper.position.set(s * 0.04, -0.23, 0.02);
+      upper.rotation.z = s * 0.12; upper.rotation.x = 0.08;
+      upper.castShadow = true; upper.name = s < 0 ? "armL" : "armR";
+      armGroup.add(upper);
+
+      // Forearm (lower segment)
+      const fMat = c.gloves ? secMat : skinMat.clone();
+      const fore = new T.Mesh(capsuleGeo(0.072 * bw, 0.32, 28), fMat);
+      fore.position.set(s * 0.08, -0.57, 0.08);
       fore.rotation.z = s * 0.14; fore.rotation.x = 0.18;
-      // Hand: now clearly forward of the torso (z≈0.16)
-      const hand = add(sphere(0.082, c.gloves ? smat(shade(c.secondary, -0.05)) : skinMat.clone()), s * (shoulderX + 0.10), 0.75, 0.16);
-      g.userData[s < 0 ? "handL" : "handR"] = hand.position.clone();
+      fore.castShadow = true;
+      armGroup.add(fore);
+
+      // Hand
+      const hMat = c.gloves ? smat(shade(c.secondary, -0.05)) : skinMat.clone();
+      const handMesh = new T.Mesh(new T.SphereGeometry(0.082, 32, 28), hMat);
+      handMesh.position.set(s * 0.10, -0.80, 0.16);
+      handMesh.castShadow = true;
+      armGroup.add(handMesh);
+
+      // Compute hand world position after pose rotation (for weapon/offhand attachment)
+      const hLocal = handMesh.position.clone().applyEuler(armGroup.rotation);
+      g.userData[s < 0 ? "handL" : "handR"] = new T.Vector3(
+        armGroup.position.x + hLocal.x,
+        armGroup.position.y + hLocal.y,
+        armGroup.position.z + hLocal.z
+      );
     });
 
     // ---- neck + head ----
     add(limb(0.075, 0.1, skinMat.clone()), 0, 1.58, 0);
     const headR = 0.2 * headScale;
-    const head = add(sphere(headR, skinMat.clone(), 40), 0, 1.78, 0); head.scale.set(0.96, 1.04, 0.96);
+    const head = add(sphere(headR, skinMat.clone(), 40), 0, 1.78, 0); head.scale.set(0.96, 1.04, 0.96); head.name = "headMesh";
     if (isDragon) { const snout = add(sphere(headR * 0.6, smat(c.skin), 18), 0, 1.74, headR * 0.8); snout.scale.set(0.8, 0.6, 1.1); }
     // ears
     if (c.race === "elf" || c.race === "halfelf") [-1, 1].forEach((s) => { const e = add(new T.Mesh(new T.ConeGeometry(0.045, 0.16, 10), skinMat.clone()), s * headR * 0.95, 1.84, -0.02); e.rotation.z = s * -0.6; e.rotation.x = -0.3; });
@@ -228,7 +257,7 @@
 
     g.scale.setScalar(raceScale * (c.height || 1));
     // Apply pose overrides
-    if (c.poseHeadTilt) g.traverse((m) => { if (m.name === "head") m.rotation.z = (c.poseHeadTilt || 0) * 0.4; });
+    if (c.poseHeadTilt) g.traverse((m) => { if (m.name === "headMesh") m.rotation.z = (c.poseHeadTilt || 0) * 0.55; });
     if (c.poseBodyLean) g.rotation.x = (c.poseBodyLean || 0) * 0.3;
     g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     return g;
@@ -376,8 +405,8 @@
       case "spear": grp.add(meshAt(capsuleGeo(0.024, 1.5), wood, 0, 0.4, 0)); grp.add(meshAt(new T.ConeGeometry(0.06, 0.26, 10), steel, 0, 1.2, 0)); break;
     }
     grp.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-    grp.rotation.x = -0.05 + (c.poseWeaponRot || 0) * 0.5;
-    grp.position.z += (c.poseWeaponX || 0) * 0.15;
+    grp.rotation.x = (c.poseWeaponRot || 0) * Math.PI; // full 360° over -1..1 slider
+    grp.position.z += (c.poseWeaponX || 0) * 0.28;
     g.add(grp);
   }
   function buildOffhand(g, off, hand, c) {

@@ -172,7 +172,7 @@
           React.createElement(ErrorBoundary, { key: view },
           React.createElement("div", { className: "view" },
             view === "home" && React.createElement(window.Dashboard, { data: Object.assign({}, D, { recaps, campaign }), go, user, onCampaignSave: setCampaign, timeline, setTimeline }),
-            view === "map" && React.createElement(window.BattleMap, { maps: D.maps, party: D.party, bestiary: D.bestiary, dm: D.dm, initialMapId: pendingMap, riversideLink, setRiversideLink }),
+            view === "map" && React.createElement(window.BattleMap, { maps: D.maps, party: D.party, bestiary: D.bestiary, dm: D.dm, initialMapId: pendingMap, riversideLink, setRiversideLink, worldBgImg, onWorldBgChange: saveWorldBg }),
             view === "world" && React.createElement(window.World, { locations: D.locations, maps: D.maps, onOpenMap: openMap, bgImg: worldBgImg, onBgImgChange: saveWorldBg, customPaths, setCustomPaths }),
             view === "crew" && React.createElement(window.CrewLore, { party: D.party, dm: D.dm, loot, setLoot, npcs, setNpcs, bestiary: D.bestiary }),
             view === "creator" && React.createElement(window.Creator, { party: D.party }),
