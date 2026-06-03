@@ -33,9 +33,11 @@
 
   const PATH_COLORS = ["#e8b54a", "#4ea7e8", "#e8412e", "#4fb98a", "#9170f0", "#f4eddd"];
 
-  function World({ locations: initLocs, maps, onOpenMap, bgImg, onBgImgChange, customPaths, setCustomPaths }) {
+  function World({ locations: initLocs, maps, onOpenMap, bgImg, onBgImgChange, customPaths, setCustomPaths, worldMapName, setWorldMapName }) {
     const ctx = useContext(window.NZAuth.RoleContext);
     const canEdit = window.NZAuth.can(ctx.role, "editWorld");
+    const [editingName, setEditingName] = useState(false);
+    const [hoveredPath, setHoveredPath] = useState(null); // path id currently hovered
     const [locs, setLocs] = useState(initLocs);
     const [sel, setSel] = useState(null);
     const [addOpen, setAddOpen] = useState(false);
@@ -167,22 +169,36 @@
 
     // Map inner style (zoom + 3D)
     const innerStyle = {
-      position: "absolute", inset: 0,
-      zIndex: 2, // must be above WorldCanvas (zIndex:1) so pins/paths show
-      transform: is3d
-        ? `scale(${zoom}) perspective(900px) rotateX(42deg)`
-        : `scale(${zoom})`,
-      transformOrigin: is3d ? "center 65%" : "center center",
-      transition: "transform 0.35s ease",
+      // In 3D mode: the WHOLE map card (background + content) tilts together as one unit
+      // Scaled down to 80% so the tilted card fits within the container
+      ...(is3d ? {
+        position: "absolute", inset: 0, zIndex: 1,
+        transform: `scale(${zoom * 0.80}) perspective(1000px) rotateX(36deg)`,
+        transformOrigin: "center 58%",
+        transition: "transform 0.35s ease",
+        border: "10px solid #5c3a1e",
+        borderRadius: 8,
+        boxShadow: "0 -30px 80px rgba(0,0,0,0.5), 0 0 0 12px #3d2210, 0 30px 60px rgba(0,0,0,0.6)",
+        overflow: "hidden",
+      } : {
+        position: "absolute", inset: 0, zIndex: 1,
+        transform: `scale(${zoom})`,
+        transformOrigin: "center center",
+        transition: "transform 0.35s ease",
+      })
     };
 
     return React.createElement("div", { style: { display: "grid", gridTemplateColumns: selLoc ? "1fr 360px" : "1fr", height: "100%", minHeight: 0 } },
       // ===== Map stage =====
-      React.createElement("div", { ref: mapContainerRef, style: { position: "relative", minWidth: 0, overflow: "hidden", background: "#0c1418" } },
-        // WorldCanvas: FLAT (outside the tilted div) so it always fills the screen
-        React.createElement(WorldCanvas, { bgImg, is3d }),
-        // Inner div: only the CONTENT tilts in 3D mode
+      // Outer container: shows "table" around the tilted map card in 3D
+      React.createElement("div", { ref: mapContainerRef, style: { position: "relative", minWidth: 0, overflow: "hidden",
+        background: is3d
+          ? "radial-gradient(ellipse 80% 60% at 50% 70%, #1e1008, #080504)"
+          : "#0c1418" } },
+        // The map card — in 3D mode tilts as one unit (WorldCanvas + content together)
         React.createElement("div", { style: innerStyle },
+          // WorldCanvas: background of the map card
+          React.createElement(WorldCanvas, { bgImg, is3d }),
           // Ambient cloud layer
           React.createElement(CloudLayer, null),
           // Routes (auto + custom) — viewBox 0-100 coordinate space
@@ -210,21 +226,25 @@
               const col = p.color || "#c4a060";
               const ptStr = allPts.map(([x, y]) => x + " " + y).join(" ");
               return React.createElement(React.Fragment, { key: p.id },
+                // Invisible wider hit area for hovering
+                canEdit && React.createElement("polyline", { points: ptStr, fill: "none", stroke: "transparent", strokeWidth: 4, style: { cursor: "pointer" },
+                  onMouseEnter: () => setHoveredPath(p.id), onMouseLeave: () => setHoveredPath(null) }),
                 // Dark outline (road edge)
-                React.createElement("polyline", { points: ptStr, fill: "none", stroke: "#2a1a08", strokeWidth: 1.6, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" }),
-                // Light fill (road surface)
-                React.createElement("polyline", { points: ptStr, fill: "none", stroke: col, strokeWidth: 0.8, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" }),
-                // Delete × at midpoint
-                canEdit && React.createElement("circle", { cx: mx, cy: my, r: 1.8, fill: "rgba(20,14,28,0.9)", stroke: col, strokeWidth: 0.35, style: { cursor: "pointer" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }),
-                canEdit && React.createElement("text", { x: mx, y: my + 0.35, textAnchor: "middle", dominantBaseline: "middle", fontSize: 2.4, fill: "#fff", style: { cursor: "pointer", userSelect: "none" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }, "×"),
-                // Tiny segment bend handles
-                canEdit && allPts.slice(0, -1).map(([ax, ay], si) => {
+                React.createElement("polyline", { points: ptStr, fill: "none", stroke: "#1a0e04", strokeWidth: 2.2, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke",
+                  onMouseEnter: canEdit ? () => setHoveredPath(p.id) : undefined, onMouseLeave: canEdit ? () => setHoveredPath(null) : undefined }),
+                // Light fill (road surface — earthy tan)
+                React.createElement("polyline", { points: ptStr, fill: "none", stroke: col, strokeWidth: 1.1, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" }),
+                // Delete × at midpoint (always visible)
+                canEdit && React.createElement("circle", { cx: mx, cy: my, r: 2, fill: "rgba(20,14,28,0.92)", stroke: col, strokeWidth: 0.4, style: { cursor: "pointer" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }),
+                canEdit && React.createElement("text", { x: mx, y: my + 0.35, textAnchor: "middle", dominantBaseline: "middle", fontSize: 2.6, fill: "#fff", style: { cursor: "pointer", userSelect: "none" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }, "×"),
+                // Segment bend handles — ONLY when hovering this path
+                canEdit && hoveredPath === p.id && allPts.slice(0, -1).map(([ax, ay], si) => {
                   const [bx, by] = allPts[si + 1];
                   const smx = (ax + bx) / 2, smy = (ay + by) / 2;
-                  return React.createElement("circle", { key: "s" + si, cx: smx, cy: smy, r: 0.5, fill: col, opacity: 0.7, style: { cursor: "grab" }, onPointerDown: (e) => onSegmentPointerDown(e, p.id, si, smx, smy) });
+                  return React.createElement("circle", { key: "s" + si, cx: smx, cy: smy, r: 0.7, fill: col, stroke: "rgba(255,255,255,0.6)", strokeWidth: 0.25, style: { cursor: "grab" }, onPointerDown: (e) => onSegmentPointerDown(e, p.id, si, smx, smy) });
                 }),
-                // Waypoint handles (small, draggable)
-                canEdit && wps.map((wp, i) => React.createElement("circle", { key: "w" + i, cx: wp.x, cy: wp.y, r: 0.9, fill: col, stroke: "#fff", strokeWidth: 0.3, style: { cursor: "grab" }, onPointerDown: (e) => onWaypointPointerDown(e, p.id, i) })));
+                // Waypoint handles — ONLY when hovering this path
+                canEdit && hoveredPath === p.id && wps.map((wp, i) => React.createElement("circle", { key: "w" + i, cx: wp.x, cy: wp.y, r: 1.1, fill: col, stroke: "#fff", strokeWidth: 0.35, style: { cursor: "grab" }, onPointerDown: (e) => onWaypointPointerDown(e, p.id, i) })));
             }).filter(Boolean)),
           // Parchment border overlay
           React.createElement(ParchmentBorder, null),
@@ -239,7 +259,15 @@
         React.createElement("div", { style: { position: "absolute", top: 16, left: 20, right: 20, zIndex: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } },
           React.createElement("div", { className: "col" },
             React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 11, letterSpacing: "0.22em", color: "var(--ink-dim)" } }, "THE REALM OF"),
-            React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 22, fontWeight: 700, background: "linear-gradient(180deg, var(--gold-bright), var(--gold-deep))", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" } }, "Aldermoor")),
+            editingName && canEdit
+              ? React.createElement("input", { autoFocus: true, className: "input", defaultValue: worldMapName || "Aldermoor",
+                  style: { fontFamily: "var(--display)", fontSize: 20, fontWeight: 700, height: 34, padding: "0 8px", maxWidth: 200, background: "rgba(13,10,20,0.8)" },
+                  onBlur: (e) => { if (setWorldMapName) setWorldMapName(e.target.value || "Aldermoor"); setEditingName(false); },
+                  onKeyDown: (e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingName(false); } })
+              : React.createElement("div", { onClick: canEdit ? () => setEditingName(true) : undefined,
+                  title: canEdit ? "Click to rename" : undefined,
+                  style: { fontFamily: "var(--display)", fontSize: 22, fontWeight: 700, background: "linear-gradient(180deg, var(--gold-bright), var(--gold-deep))", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", cursor: canEdit ? "text" : "default" } },
+                  worldMapName || "Aldermoor")),
           React.createElement("div", { className: "grow" }),
           // Zoom controls
           React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 4, background: "rgba(13,10,20,0.8)", border: "1px solid var(--hair)", borderRadius: 100, padding: "4px 8px", backdropFilter: "blur(6px)" } },

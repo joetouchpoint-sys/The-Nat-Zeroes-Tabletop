@@ -150,8 +150,22 @@
     // ---- torso ----
     const torso = add(new T.Mesh(torsoGeo(bw), primMat), 0, 0.9, 0);
     torso.scale.z = 0.74;
-    // chest overlay (armor plate / tunic front)
+    // chest overlay / outfit-specific details
     if (c.outfit === "plate") { const chest = add(new T.Mesh(torsoGeo(bw * 1.04), metal(c.primary, 0.38)), 0, 0.91, 0.02); chest.scale.z = 0.6; }
+    if (c.outfit === "noble") {
+      // Noble coat: high collar
+      add(new T.Mesh(new T.CylinderGeometry(0.095, 0.11, 0.18, 16, 1, true), cloth(c.primary)), 0, 1.65, 0);
+      // Lapels: two flat panels on chest
+      [-1, 1].forEach((s) => { const lapel = add(new T.Mesh(new T.BoxGeometry(0.08, 0.22, 0.04), cloth(c.secondary)), s * 0.09, 1.38, 0.12); lapel.rotation.z = s * 0.1; });
+    }
+    if (c.outfit === "barbarian") {
+      // Fur shoulder pieces
+      [-1, 1].forEach((s) => { const fur = add(sphere(0.14 * bw, smat(shade(c.secondary, 0.1), { roughness: 0.96 }), 8), s * 0.30 * bw, 1.52, 0); fur.scale.set(1.4, 0.7, 1.2); });
+    }
+    if (c.outfit === "ranger") {
+      // Ranger hood (attached to body, small back piece)
+      add(new T.Mesh(new T.SphereGeometry(0.14, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), cloth(c.primary)), 0, 1.68, -0.08).scale.set(1.1, 1.1, 1.15);
+    }
     // belt
     add(new T.Mesh(new T.TorusGeometry(0.22 * bw, 0.035, 10, 28), trimMat), 0, 0.96, 0).scale.set(1, 1, 0.78);
 
@@ -227,18 +241,22 @@
     if (c.race === "elf" || c.race === "halfelf") [-1, 1].forEach((s) => { const e = addH(new T.Mesh(new T.ConeGeometry(0.045, 0.16, 10), skinMat.clone()), s * headR * 0.95, 1.84, -0.02); e.rotation.z = s * -0.6; e.rotation.x = -0.3; });
     else [-1, 1].forEach((s) => { const e = addH(sphere(0.05, skinMat.clone(), 12), s * headR * 0.98, 1.78, 0); e.scale.set(0.5, 1, 0.7); });
 
-    // eyes
-    [-1, 1].forEach((s) => {
-      const white = addH(sphere(0.062, smat("#f8f4f0"), 20), s * 0.076, 1.798, headR * 1.08); white.scale.set(1, 1.22, 0.58);
-      addH(sphere(0.040, smat(c.eyeColor, { roughness: 0.18, metalness: 0.05 }), 20), s * 0.076, 1.791, headR * 1.13);
-      addH(sphere(0.022, smat("#080604"), 14), s * 0.076, 1.792, headR * 1.17);
-      addH(sphere(0.009, smat("#ffffff", { roughness: 0.05 }), 8), s * 0.083, 1.800, headR * 1.19);
-      addH(sphere(0.005, smat("#ffffff", { roughness: 0.05 }), 6), s * 0.070, 1.796, headR * 1.19);
-      if (c.brows) {
-        const b = addH(new T.Mesh(new T.BoxGeometry(0.082, 0.022, 0.030), hairMat), s * 0.076, 1.868, headR * 1.10);
-        b.rotation.z = s * -0.14;
-      }
-    });
+    // eyes — skip for helmFull (covered); pull back slightly for helmOpen
+    const eyeZScale = c.headgear === "helmFull" ? 0 : (c.headgear === "helmOpen" ? 0.85 : 1);
+    if (eyeZScale > 0) {
+      [-1, 1].forEach((s) => {
+        const ez = headR * 1.08 * eyeZScale;
+        const white = addH(sphere(0.062, smat("#f8f4f0"), 20), s * 0.076, 1.798, ez); white.scale.set(1, 1.22, 0.58 * eyeZScale);
+        addH(sphere(0.040, smat(c.eyeColor, { roughness: 0.18, metalness: 0.05 }), 20), s * 0.076, 1.791, headR * 1.13 * eyeZScale);
+        addH(sphere(0.022, smat("#080604"), 14), s * 0.076, 1.792, headR * 1.17 * eyeZScale);
+        addH(sphere(0.009, smat("#ffffff", { roughness: 0.05 }), 8), s * 0.083, 1.800, headR * 1.19 * eyeZScale);
+        addH(sphere(0.005, smat("#ffffff", { roughness: 0.05 }), 6), s * 0.070, 1.796, headR * 1.19 * eyeZScale);
+        if (c.brows && c.headgear !== "helmFull") {
+          const b = addH(new T.Mesh(new T.BoxGeometry(0.082, 0.022, 0.030), hairMat), s * 0.076, 1.868, headR * 1.10);
+          b.rotation.z = s * -0.14;
+        }
+      });
+    }
     // nose + mouth
     const nose = addH(sphere(0.026, skinMat.clone(), 18), 0, 1.757, headR * 1.14); nose.scale.set(0.85, 0.78, 0.9);
     [-1, 1].forEach((s) => { const n = addH(sphere(0.012, smat(shade(c.skin, -0.07)), 10), s * 0.021, 1.744, headR * 1.15); n.scale.set(1, 0.65, 0.75); });
@@ -429,6 +447,18 @@
       case "dagger": grp.add(meshAt(capsuleGeo(0.02, 0.12), wood, 0, 0, 0)); grp.add(meshAt(bladeGeo(0.05, 0.28), steel, 0, 0.2, 0)); break;
       case "mace": grp.add(meshAt(capsuleGeo(0.026, 0.55), wood, 0, 0.18, 0)); grp.add(meshAt(new T.IcosahedronGeometry(0.1, 0), metal("#8a909a", 0.35), 0, 0.52, 0)); break;
       case "spear": grp.add(meshAt(capsuleGeo(0.024, 1.5), wood, 0, 0.4, 0)); grp.add(meshAt(new T.ConeGeometry(0.06, 0.26, 10), steel, 0, 1.2, 0)); break;
+      case "bow": {
+        // Bow grip
+        grp.add(meshAt(capsuleGeo(0.018, 0.22), wood, 0, 0.3, 0));
+        // Upper limb
+        const uLimb = new T.Mesh(capsuleGeo(0.013, 0.38, 10), wood); uLimb.rotation.z = 0.22; uLimb.position.set(0.05, 0.55, 0.05); grp.add(uLimb);
+        // Lower limb
+        const lLimb = new T.Mesh(capsuleGeo(0.013, 0.38, 10), wood); lLimb.rotation.z = -0.22; lLimb.position.set(0.05, 0.05, 0.05); grp.add(lLimb);
+        // Bowstring
+        const strMat = new T.MeshStandardMaterial({ color: "#d4c89a", roughness: 0.65 });
+        grp.add(meshAt(capsuleGeo(0.005, 0.76, 6), strMat, 0.12, 0.3, 0.1));
+        break;
+      }
     }
     grp.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     grp.rotation.x = (c.poseWeaponRot || 0) * Math.PI; // full 360° over -1..1 slider

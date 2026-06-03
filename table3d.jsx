@@ -489,7 +489,8 @@
       });
     }
 
-    return React.createElement("div", { ref: mountRef, style: { position: "absolute", inset: 0 } });
+    return React.createElement("div", { ref: mountRef, style: { position: "absolute", inset: 0 },
+      onContextMenu: (e) => e.preventDefault() });
   }
 
   window.Table3D = Table3D;
