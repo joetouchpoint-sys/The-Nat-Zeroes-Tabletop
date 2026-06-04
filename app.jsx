@@ -58,7 +58,7 @@
     { id: "crew", label: "Crew & Lore", icon: "party", title: "Crew & Lore", eyebrow: "Party · NPCs · Compendium" },
     { id: "creator", label: "Creator", icon: "user", title: "Character Creator", eyebrow: "Forge a Hero" },
     { id: "scheduler", label: "Schedule", icon: "scheduler", title: "Scheduler", eyebrow: "Plan Sessions" },
-    { id: "recaps", label: "Recaps", icon: "recap", title: "Recaps", eyebrow: "Campaign Log" },
+    { id: "timeline", label: "Campaign Log", icon: "recap", title: "Campaign Log", eyebrow: "Timeline · Sessions · Recaps" },
     { id: "chatzeros", label: "Chat Zeroes", icon: "sparkle", title: "The Chat Zeroes", eyebrow: "Aftershow · Podcast" },
     { id: "extras", label: "Extras", icon: "flame", title: "Fan Extras", eyebrow: "Bonus Content" },
     { id: "accounts", label: "Accounts", icon: "shield", title: "Accounts & Roles", eyebrow: "Who's Who" },
@@ -87,11 +87,8 @@
     const [customPaths, setCustomPaths] = useState(() => lsGet("nz_worldpaths",  []));
     const [riversideLink, setRiversideLink]   = useState(() => lsGet("nz_riverside", ""));
     const [worldMapName, setWorldMapName]     = useState(() => lsGet("nz_worldname", "Aldermoor"));
-    const [musicUrl, setMusicUrl]           = useState(() => lsGet("nz_musicurl", ""));
-    const [musicOpen, setMusicOpen]         = useState(false);
-    const [musicPlaying, setMusicPlaying]   = useState(false);
     const [soundsOn, setSoundsOn]           = useState(true);
-    useEffect(() => { lsSet("nz_musicurl", musicUrl); }, [musicUrl]);
+    const isFbIncoming = useRef(false);
     const [worldBgImg, setWorldBgImg] = useState(null);
     useEffect(() => { dbLoad("nz_worldbg", (img) => { if (img) setWorldBgImg(img); }); }, []);
     function saveWorldBg(img) { setWorldBgImg(img); dbSave("nz_worldbg", img || null); }
@@ -112,6 +109,43 @@
     useEffect(() => { lsSet("nz_worldpaths",  customPaths);  }, [customPaths]);
     useEffect(() => { lsSet("nz_riverside",   riversideLink); }, [riversideLink]);
     useEffect(() => { lsSet("nz_worldname",   worldMapName);  }, [worldMapName]);
+
+    // ── Permanent Firebase campaign sync ──────────────────────────────────
+    // All devices: read campaign state from Firebase on load (and on any DM change)
+    useEffect(() => {
+      if (!window.NZFirebase || !window.NZFirebase.isReady) return;
+      window.NZFirebase.watchCampaign(function(data) {
+        isFbIncoming.current = true;
+        try {
+          if (data.recaps)      setRecaps(data.recaps);
+          if (data.campaign)    setCampaign(data.campaign);
+          if (data.chatStats)   setChatStats(data.chatStats);
+          if (data.awards)      setAwards(data.awards);
+          if (data.quotes)      setQuotes(data.quotes);
+          if (data.loot)        setLoot(data.loot);
+          if (data.npcs)        setNpcs(data.npcs);
+          if (data.timeline)    setTimeline(data.timeline);
+          if (data.deaths)      setDeaths(data.deaths);
+          if (data.predictions) setPredictions(data.predictions);
+          if (data.gags)        setGags(data.gags);
+          if (data.shoutouts)   setShoutouts(data.shoutouts);
+          if (data.customPaths) setCustomPaths(data.customPaths);
+          if (data.worldMapName)setWorldMapName(data.worldMapName);
+          if (data.riversideLink !== undefined) setRiversideLink(data.riversideLink || "");
+        } catch(e) {}
+        setTimeout(function() { isFbIncoming.current = false; }, 600);
+      });
+      return function() { if (window.NZFirebase.stopWatchingCampaign) window.NZFirebase.stopWatchingCampaign(); };
+    }, []); // mount only
+
+    // DM only: write campaign state to Firebase whenever anything changes
+    useEffect(() => {
+      if (role !== "dm" || !window.NZFirebase || isFbIncoming.current) return;
+      window.NZFirebase.writeCampaign({
+        recaps, campaign, chatStats, awards, quotes, loot, npcs, timeline,
+        deaths, predictions, gags, shoutouts, customPaths, worldMapName, riversideLink,
+      });
+    }, [role, recaps, campaign, chatStats, awards, quotes, loot, npcs, timeline, deaths, predictions, gags, shoutouts, customPaths, worldMapName, riversideLink]); // eslint-disable-line
 
     const role = user ? user.role : null;
     const allowed = role ? Auth.VIEW_ACCESS[role] : [];
@@ -180,18 +214,6 @@
             React.createElement("button", { className: "icon-btn", title: soundsOn ? "Mute UI sounds" : "Enable UI sounds",
               onClick: () => { const on = window.NZSounds ? window.NZSounds.toggle() : false; setSoundsOn(on !== undefined ? on : !soundsOn); } },
               React.createElement("span", { style: { fontSize: 16 } }, soundsOn ? "🔊" : "🔇")),
-            // Music player
-            React.createElement("div", { style: { position: "relative" } },
-              React.createElement("button", { className: "icon-btn", title: "Ambient music", onClick: () => setMusicOpen((x) => !x) },
-                React.createElement("span", { style: { fontSize: 16 } }, musicPlaying ? "🎵" : "🎶")),
-              musicOpen && React.createElement("div", { style: { position: "fixed", top: 66, right: 8, zIndex: 9999, background: "var(--surface)", border: "1px solid var(--hair)", borderRadius: 12, padding: 16, boxShadow: "var(--shadow-2)", minWidth: 280, display: "flex", flexDirection: "column", gap: 10 } },
-                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 600, fontSize: 13, color: "var(--gold)" } }, "🎵 Ambient Music"),
-                React.createElement("div", { className: "muted", style: { fontSize: 12 } }, "Paste a YouTube, Spotify, or SoundCloud URL. Opens in a new tab."),
-                React.createElement("input", { className: "input", value: musicUrl, onChange: (e) => setMusicUrl(e.target.value), placeholder: "https://youtube.com/watch?v=..." }),
-                React.createElement("div", { className: "row", style: { gap: 8 } },
-                  React.createElement("button", { className: "btn primary", disabled: !musicUrl, onClick: () => { window.open(musicUrl, "_blank"); setMusicPlaying(true); setMusicOpen(false); } }, "▶ Open"),
-                  React.createElement("button", { className: "btn ghost", onClick: () => { setMusicPlaying(false); setMusicOpen(false); } }, "Stop"),
-                  React.createElement("button", { className: "btn ghost sm", onClick: () => setMusicOpen(false) }, "✕")))),
             React.createElement("button", { className: "icon-btn", title: "Notifications" }, React.createElement(Icon, { name: "bell", size: 18 }))),
 
           React.createElement(ErrorBoundary, { key: view },
@@ -202,7 +224,7 @@
             view === "crew" && React.createElement(window.CrewLore, { party: D.party, dm: D.dm, loot, setLoot, npcs, setNpcs, bestiary, setBestiary }),
             view === "creator" && React.createElement(window.Creator, { party: D.party }),
             view === "scheduler" && React.createElement(window.Scheduler, { members: D.members, pollOptions: D.pollOptions, sessions: D.sessions, weeklySchedule: D.weeklySchedule }),
-            view === "recaps" && React.createElement(Recaps, { recaps, setRecaps, stats: D.stats }),
+            view === "timeline" && React.createElement(window.CampaignLog, { recaps, setRecaps, timeline, setTimeline, stats: D.stats }),
             view === "chatzeros" && React.createElement(window.ChatZeroes, { chatStats, setChatStats, awards, setAwards, quotes, setQuotes, deaths, setDeaths, predictions, setPredictions, gags, setGags, shoutouts, setShoutouts, party: D.party }),
             view === "extras" && React.createElement(Extras, { recaps, stats: D.stats, go }),
             view === "accounts" && React.createElement(Auth.AccountsView)))),

@@ -83,7 +83,9 @@
       // Pan drag on the outer container (in 3D mode, drag to pan when not on a pin)
       function onContainerPointerDown(ev) {
         if (ev.button !== 0) return;
-        if (ev.target.closest("button") || ev.target.closest(".path-ctrl")) return;
+        const t = ev.target;
+        if (t.closest("button") || t.closest(".path-ctrl")) return;
+        if (t.tagName === "circle" || t.tagName === "text" || t.tagName === "polyline" || t.tagName === "line") return;
         panDragRef.current = { startX: ev.clientX, startY: ev.clientY, origPanX: panX, origPanY: panY };
         window.addEventListener("pointermove", onContainerPointerMove);
         window.addEventListener("pointerup", onContainerPointerUp);
@@ -218,25 +220,9 @@
       // ===== Map stage =====
       // Outer container: shows "table" around the tilted map card in 3D
       React.createElement("div", { ref: mapContainerRef, style: { position: "relative", minWidth: 0, overflow: "hidden",
-        background: is3d
-          ? [
-              // Campfire glow at centre-bottom
-              "radial-gradient(ellipse 25% 20% at 50% 92%, rgba(255,120,20,0.5), transparent 100%)",
-              // Ground — earthy forest floor
-              "radial-gradient(ellipse 100% 35% at 50% 100%, #1a1002 0%, transparent 70%)",
-              // Tree silhouettes L/R
-              "radial-gradient(ellipse 8% 70% at 4% 65%, #0a1400 0%, transparent 100%)",
-              "radial-gradient(ellipse 8% 70% at 96% 65%, #0a1400 0%, transparent 100%)",
-              "radial-gradient(ellipse 6% 55% at 12% 70%, #0c1600 0%, transparent 100%)",
-              "radial-gradient(ellipse 6% 55% at 88% 70%, #0c1600 0%, transparent 100%)",
-              "radial-gradient(ellipse 5% 45% at 20% 72%, #0e1800 0%, transparent 100%)",
-              "radial-gradient(ellipse 5% 45% at 80% 72%, #0e1800 0%, transparent 100%)",
-              // Tent / teepee glow behind map
-              "radial-gradient(ellipse 30% 50% at 50% 30%, rgba(120,80,20,0.08), transparent 80%)",
-              // Night sky gradient
-              "linear-gradient(180deg, #030608 0%, #050e08 30%, #081204 60%, #0f1a06 80%, #1a2204 100%)",
-            ].join(", ")
-          : "#0c1418" } },
+        background: is3d ? "#040810" : "#0c1418" } },
+        // Three.js outdoor scene — flat, fills entire container behind the tilted map card
+        is3d && React.createElement(WorldScene3D, null),
         // The map card — in 3D mode tilts as one unit (WorldCanvas + content together)
         React.createElement("div", { style: innerStyle },
           // WorldCanvas: background of the map card
@@ -283,10 +269,10 @@
                 canEdit && hoveredPath === p.id && allPts.slice(0, -1).map(([ax, ay], si) => {
                   const [bx, by] = allPts[si + 1];
                   const smx = (ax + bx) / 2, smy = (ay + by) / 2;
-                  return React.createElement("circle", { key: "s" + si, cx: smx, cy: smy, r: 0.7, fill: col, stroke: "rgba(255,255,255,0.6)", strokeWidth: 0.25, style: { cursor: "grab" }, onPointerDown: (e) => onSegmentPointerDown(e, p.id, si, smx, smy) });
+                  return React.createElement("circle", { key: "s" + si, cx: smx, cy: smy, r: 0.7, fill: col, stroke: "rgba(255,255,255,0.6)", strokeWidth: 0.25, style: { cursor: "grab" }, onPointerDown: (e) => { e.stopPropagation(); onSegmentPointerDown(e, p.id, si, smx, smy); } });
                 }),
                 // Waypoint handles — ONLY when hovering this path
-                canEdit && hoveredPath === p.id && wps.map((wp, i) => React.createElement("circle", { key: "w" + i, cx: wp.x, cy: wp.y, r: 1.1, fill: col, stroke: "#fff", strokeWidth: 0.35, style: { cursor: "grab" }, onPointerDown: (e) => onWaypointPointerDown(e, p.id, i) })));
+                canEdit && hoveredPath === p.id && wps.map((wp, i) => React.createElement("circle", { key: "w" + i, cx: wp.x, cy: wp.y, r: 1.1, fill: col, stroke: "#fff", strokeWidth: 0.35, style: { cursor: "grab" }, onPointerDown: (e) => { e.stopPropagation(); onWaypointPointerDown(e, p.id, i); } })));
             }).filter(Boolean)),
           // Parchment border overlay
           React.createElement(ParchmentBorder, null),
@@ -397,6 +383,120 @@
         animation: c.anim + " " + c.dur + " ease-in-out infinite",
         animationDelay: (i * 3) + "s",
       } })));
+  }
+
+  // Three.js outdoor forest camp scene (shows BEHIND the tilted map card in 3D mode)
+  function WorldScene3D() {
+    const mountRef = useRef(null);
+    useEffect(function() {
+      const T = window.THREE; if (!T || !mountRef.current) return;
+      const cont = mountRef.current;
+      const w = cont.clientWidth, h = cont.clientHeight;
+      const scene = new T.Scene();
+      scene.fog = new T.FogExp2(0x040810, 0.022);
+      const renderer = new T.WebGLRenderer({ antialias: true });
+      renderer.setSize(w, h); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+      renderer.setClearColor(0x040810, 1);
+      renderer.shadowMap.enabled = true;
+      cont.appendChild(renderer.domElement);
+      const camera = new T.PerspectiveCamera(50, w / h, 0.1, 200);
+      camera.position.set(0, 4, 12); camera.lookAt(0, 1.5, 0);
+
+      // Lighting — night atmosphere
+      scene.add(new T.HemisphereLight(0x080a08, 0x000400, 0.5));
+      const moon = new T.DirectionalLight(0x8090c0, 0.6); moon.position.set(-8, 12, 6); scene.add(moon);
+
+      // Ground
+      const groundTex = (function() {
+        const cv = document.createElement("canvas"); cv.width = 256; cv.height = 256;
+        const x = cv.getContext("2d");
+        x.fillStyle = "#0d1208"; x.fillRect(0, 0, 256, 256);
+        for (var i = 0; i < 400; i++) { x.fillStyle = "rgba(" + (10+Math.random()*10) + "," + (18+Math.random()*12) + ",5,0.5)"; x.beginPath(); x.arc(Math.random()*256, Math.random()*256, 2+Math.random()*5, 0, 7); x.fill(); }
+        return new T.CanvasTexture(cv);
+      })();
+      groundTex.wrapS = groundTex.wrapT = T.RepeatWrapping; groundTex.repeat.set(8, 8);
+      const ground = new T.Mesh(new T.PlaneGeometry(80, 80), new T.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }));
+      ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+      // Teepee tent
+      function makeTeepee(x, z, scale) {
+        const mat = new T.MeshStandardMaterial({ color: 0x8a6030, roughness: 0.85 });
+        const cone = new T.Mesh(new T.ConeGeometry(1.5 * scale, 4.0 * scale, 12), mat);
+        cone.position.set(x, 2.0 * scale, z); scene.add(cone);
+        // Poles sticking out top
+        const poleMat = new T.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.9 });
+        for (var i = 0; i < 5; i++) {
+          var a = (i / 5) * Math.PI * 2;
+          var pole = new T.Mesh(new T.CylinderGeometry(0.03*scale, 0.05*scale, 5.5*scale, 5), poleMat);
+          pole.position.set(x + Math.cos(a)*0.15*scale, 2.8*scale, z + Math.sin(a)*0.15*scale);
+          pole.rotation.z = Math.cos(a) * 0.18; pole.rotation.x = Math.sin(a) * 0.18;
+          scene.add(pole);
+        }
+        // Entrance (darker patch on front)
+        var door = new T.Mesh(new T.PlaneGeometry(0.6*scale, 1.2*scale), new T.MeshStandardMaterial({ color: 0x2a1a06, roughness: 0.9, side: T.DoubleSide }));
+        door.position.set(x, 0.6*scale, z + 1.5*scale + 0.02); scene.add(door);
+      }
+      makeTeepee(-5, -4, 1.2);
+      makeTeepee(5.5, -5, 0.9);
+
+      // Campfire
+      var campfireX = 0, campfireZ = -1;
+      var logMat = new T.MeshStandardMaterial({ color: 0x4a2a0a, roughness: 0.9 });
+      for (var i = 0; i < 4; i++) {
+        var la = (i / 4) * Math.PI * 2;
+        var log = new T.Mesh(new T.CylinderGeometry(0.06, 0.08, 0.9, 6), logMat);
+        log.position.set(campfireX + Math.cos(la)*0.22, 0.05, campfireZ + Math.sin(la)*0.22);
+        log.rotation.z = Math.cos(la) * 0.5; log.rotation.x = Math.sin(la) * 0.5;
+        scene.add(log);
+      }
+      var fireMat = new T.MeshStandardMaterial({ color: 0xff7020, emissive: 0xff4400, emissiveIntensity: 1.2, roughness: 0.4 });
+      var fire = new T.Mesh(new T.SphereGeometry(0.22, 10, 8), fireMat);
+      fire.position.set(campfireX, 0.22, campfireZ); fire.scale.set(1, 1.4, 1); scene.add(fire);
+      var fireCore = new T.Mesh(new T.SphereGeometry(0.1, 8, 6), new T.MeshStandardMaterial({ color: "#fff8e0", emissive: "#fff8e0", emissiveIntensity: 2.5 }));
+      fireCore.position.set(campfireX, 0.22, campfireZ); scene.add(fireCore);
+      var fireLight = new T.PointLight(0xff6010, 3.0, 12); fireLight.position.set(campfireX, 0.5, campfireZ); scene.add(fireLight);
+
+      // Pine trees
+      function makeTree(x, z, h) {
+        var trunk = new T.Mesh(new T.CylinderGeometry(0.1, 0.15, h*0.3, 6), new T.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.9 }));
+        trunk.position.set(x, h*0.15, z); scene.add(trunk);
+        var tiers = [1, 0.78, 0.58];
+        tiers.forEach(function(t, ti) {
+          var canopy = new T.Mesh(new T.ConeGeometry(h*0.28*t, h*0.38, 7), new T.MeshStandardMaterial({ color: 0x081206, roughness: 0.92 }));
+          canopy.position.set(x, h*(0.3 + ti*0.24), z); scene.add(canopy);
+        });
+      }
+      [[-9,2,5],[9,3,5.5],[-11,-2,4.5],[11,-1,6],[-7,-6,5],[8,-5,4.5],[-13,4,6],[12,2,5.5],[-5,6,5],[6,6,4],[-9,-8,5.5],[10,-7,6],[0,7,5],[-15,-4,7],[14,-3,5]].forEach(function(t) { makeTree(t[0], t[1], t[2]); });
+
+      // Stars
+      var starGeo = new T.BufferGeometry();
+      var starPts = [];
+      for (var i = 0; i < 200; i++) {
+        var phi = Math.random() * Math.PI * 2, theta = Math.random() * Math.PI * 0.5;
+        starPts.push(Math.sin(theta)*Math.cos(phi)*50, Math.cos(theta)*50 + 10, Math.sin(theta)*Math.sin(phi)*50);
+      }
+      starGeo.setAttribute("position", new T.Float32BufferAttribute(starPts, 3));
+      scene.add(new T.Points(starGeo, new T.PointsMaterial({ color: 0xffffff, size: 0.3 })));
+
+      var raf, t = 0;
+      function loop() {
+        raf = requestAnimationFrame(loop);
+        t += 0.004;
+        // Gentle camera sway
+        camera.position.x = Math.sin(t * 0.3) * 1.2;
+        camera.position.y = 4 + Math.sin(t * 0.2) * 0.3;
+        camera.lookAt(0, 1.5, 0);
+        // Flickering fire
+        fireLight.intensity = 2.6 + Math.sin(t * 8) * 0.5 + Math.sin(t * 13) * 0.3;
+        fire.scale.y = 1.3 + Math.sin(t * 9) * 0.12;
+        renderer.render(scene, camera);
+      }
+      loop();
+      function resize() { renderer.setSize(cont.clientWidth, cont.clientHeight); camera.aspect = cont.clientWidth / cont.clientHeight; camera.updateProjectionMatrix(); }
+      const ro = new ResizeObserver(resize); ro.observe(cont); setTimeout(resize, 0);
+      return function() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement); };
+    }, []);
+    return React.createElement("div", { ref: mountRef, style: { position: "absolute", inset: 0 } });
   }
 
   // World background canvas

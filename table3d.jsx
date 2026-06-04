@@ -202,9 +202,13 @@
           if (hits.length > 0) {
             const hit = hits[0].object;
             const entry = (state.current.objectMeshes || []).find(function(o) { return o.mesh === hit; });
-            if (entry && onSelectObjRef.current) { onSelectObjRef.current(entry.id); return; }
+            if (entry) {
+              state.current.selectedObj3DId = entry.id; // store so next click can move it
+              if (onSelectObjRef.current) onSelectObjRef.current(entry.id);
+              return;
+            }
           }
-          // If an object is "selected" (tracked by ref) and we click ground → move it
+          // If an object is "selected" and we click ground → move it there
           if (state.current.selectedObj3DId && onMoveObj3DRef.current) {
             const pt = groundPosAt(e);
             if (pt) {
