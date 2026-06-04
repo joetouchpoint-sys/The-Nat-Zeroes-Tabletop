@@ -538,12 +538,13 @@
             placingObj, setPlacingObj, placingAoe, setPlacingAoe,
             onClearAoe: () => setAoeList([]), onClearObjects: () => setMapObjs([]) }),
           // 3D board
-          view3d && React.createElement(window.Table3D, { map, tokens, party, bestiary, activeUid, hexMode, mapObjs,
+          view3d && React.createElement(window.Table3D, { map, tokens, party, bestiary, activeUid, hexMode, mapObjs, aoeList,
             tool,
             onMoveToken: canMove ? (uid, c, r) => setTokens((ts) => ts.map((t) => t.uid === uid ? { ...t, c: clamp(c, 0, map.cols - 1), r: clamp(r, 0, map.rows - 1) } : t)) : null,
             onPlaceObject: (c, r) => { if (placingObj && canEdit) setMapObjs((os) => [...os, { id: "o" + Date.now(), ...placingObj, c, r }]); },
             onPlaceAoe:    (c, r) => { if (placingAoe) setAoeList((as) => [...as, { id: "a" + Date.now(), ...placingAoe, c, r }]); },
-            onSelectObject3D: canEdit ? (id) => setSelectedObj3D(id === selectedObj3D ? null : id) : null }),
+            onSelectObject3D: canEdit ? (id) => { setSelectedObj3D(id === selectedObj3D ? null : id); setSelectedObj3D(id); } : null,
+            onMoveObject3D: canEdit ? (id, c, r) => setMapObjs((os) => os.map((o) => o.id === id ? Object.assign({}, o, { c: clamp(c, 0, map.cols-1), r: clamp(r, 0, map.rows-1) }) : o)) : null }),
           // 3D object manipulation panel
           view3d && selectedObj3D && canEdit && React.createElement(Obj3DPanel, { objId: selectedObj3D, mapObjs, setMapObjs, onClose: () => setSelectedObj3D(null) }),
           view3d && React.createElement("div", { style: { position: "absolute", top: 14, left: 64, zIndex: 12, fontSize: 12, color: "var(--ink-dim)", background: "rgba(13,10,20,0.7)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 12px", backdropFilter: "blur(6px)" } }, "Orbit: drag \u00b7 Zoom: scroll \u00b7 Hold figure to drag"),
@@ -723,8 +724,8 @@
         React.createElement("button", { className: "btn sm ghost", onClick: () => upd({ w: Math.max(1, (obj.w || 1) - 1) }) }, "−"),
         React.createElement("span", { className: "mono", style: { fontSize: 13, minWidth: 20, textAlign: "center" } }, obj.w || 1),
         React.createElement("button", { className: "btn sm ghost", onClick: () => upd({ w: Math.min(10, (obj.w || 1) + 1) }) }, "+")),
-      // Move: click new cell
-      React.createElement("div", { style: { fontSize: 11, color: "var(--ink-dim)" } }, "To move: switch to Select tool, click on a cell to set new position coming soon"),
+      // Move instruction
+      React.createElement("div", { style: { fontSize: 11, color: "var(--gold-deep)", background: "rgba(232,181,74,0.08)", borderRadius: 6, padding: "5px 8px" } }, "Click anywhere on the 3D board to move here"),
       // Delete
       React.createElement("button", { className: "btn ghost sm", style: { color: "var(--red-bright)", marginTop: 4 },
         onClick: () => { setMapObjs((os) => os.filter((o) => o.id !== objId)); onClose(); } },

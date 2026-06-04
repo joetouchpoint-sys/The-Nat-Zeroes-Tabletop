@@ -634,16 +634,33 @@
         const pl = new T.PointLight(0xff7020, 2.4, 7); pl.position.set(tx, ty + 0.4, tz + 0.1); scene.add(pl);
       });
 
-      // ---- Side braziers on platform ----
-      const brazierMat = new T.MeshStandardMaterial({ color: "#4a3a20", roughness: 0.7, metalness: 0.5 });
-      [[-1.85, 0.14, 0.4], [1.85, 0.14, 0.4]].forEach(([bx, by, bz]) => {
-        const bowl = new T.Mesh(new T.CylinderGeometry(0.16, 0.09, 0.28, 14, 1, true), brazierMat);
-        bowl.position.set(bx, by, bz); scene.add(bowl);
-        const base = new T.Mesh(new T.CylinderGeometry(0.05, 0.08, 0.18, 8), brazierMat);
-        base.position.set(bx, by - 0.23, bz); scene.add(base);
-        const fire = new T.Mesh(new T.SphereGeometry(0.11, 10, 8), flameMat);
-        fire.position.set(bx, by + 0.18, bz); fire.scale.set(0.8, 1.2, 0.8); scene.add(fire);
-        const bpl = new T.PointLight(0xff6010, 1.4, 4); bpl.position.set(bx, by + 0.3, bz); scene.add(bpl);
+      // ---- Side braziers on platform (floor torches) ----
+      const brazierMat = new T.MeshStandardMaterial({ color: "#4a3a20", roughness: 0.65, metalness: 0.55 });
+      [[-1.85, 0, 0.4], [1.85, 0, 0.4]].forEach(([bx, by, bz]) => {
+        // Tripod legs (3 angled supports)
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2;
+          const leg = new T.Mesh(new T.CylinderGeometry(0.02, 0.025, 0.32, 6), brazierMat);
+          leg.position.set(bx + Math.cos(a) * 0.1, by + 0.14, bz + Math.sin(a) * 0.1);
+          leg.rotation.z = Math.cos(a) * 0.3; leg.rotation.x = Math.sin(a) * 0.3;
+          scene.add(leg);
+        }
+        // Bowl (open cylinder with solid bottom disc)
+        const bowl = new T.Mesh(new T.CylinderGeometry(0.18, 0.12, 0.14, 16, 1, true), brazierMat);
+        bowl.position.set(bx, by + 0.28, bz); scene.add(bowl);
+        // Bowl bottom disc (closes the open cylinder)
+        const bottom = new T.Mesh(new T.CircleGeometry(0.12, 16), brazierMat);
+        bottom.rotation.x = Math.PI / 2; bottom.position.set(bx, by + 0.21, bz); scene.add(bottom);
+        // Glowing coals (dark base)
+        const coals = new T.Mesh(new T.CylinderGeometry(0.12, 0.1, 0.04, 16), new T.MeshStandardMaterial({ color: "#3a1a04", emissive: "#8a2a00", emissiveIntensity: 0.4 }));
+        coals.position.set(bx, by + 0.29, bz); scene.add(coals);
+        // Fire sphere sitting in the bowl
+        const fire = new T.Mesh(new T.SphereGeometry(0.1, 12, 8), flameMat);
+        fire.position.set(bx, by + 0.37, bz); fire.scale.set(0.9, 1.1, 0.9); scene.add(fire);
+        // Bright flame core
+        const fc = new T.Mesh(new T.SphereGeometry(0.046, 8, 6), new T.MeshStandardMaterial({ color: "#fff8e0", emissive: "#fff8e0", emissiveIntensity: 2.0 }));
+        fc.position.set(bx, by + 0.37, bz); scene.add(fc);
+        const bpl = new T.PointLight(0xff6010, 1.8, 5); bpl.position.set(bx, by + 0.45, bz); scene.add(bpl);
       });
 
       // Uplight from glyph floor

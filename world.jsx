@@ -37,7 +37,10 @@
     const ctx = useContext(window.NZAuth.RoleContext);
     const canEdit = window.NZAuth.can(ctx.role, "editWorld");
     const [editingName, setEditingName] = useState(false);
-    const [hoveredPath, setHoveredPath] = useState(null); // path id currently hovered
+    const [hoveredPath, setHoveredPath] = useState(null);
+    const [panX, setPanX] = useState(0);
+    const [panY, setPanY] = useState(0);
+    const panDragRef = useRef(null); // {startX, startY, origPanX, origPanY}
     const [locs, setLocs] = useState(initLocs);
     const [sel, setSel] = useState(null);
     const [addOpen, setAddOpen] = useState(false);
@@ -77,8 +80,31 @@
       if (!el) return;
       function onWheel(e) { e.preventDefault(); setZoom((z) => Math.max(0.4, Math.min(3, z - e.deltaY * 0.001))); }
       el.addEventListener("wheel", onWheel, { passive: false });
-      return () => el.removeEventListener("wheel", onWheel);
-    }, []);
+      // Pan drag on the outer container (in 3D mode, drag to pan when not on a pin)
+      function onContainerPointerDown(ev) {
+        if (ev.button !== 0) return;
+        if (ev.target.closest("button") || ev.target.closest(".path-ctrl")) return;
+        panDragRef.current = { startX: ev.clientX, startY: ev.clientY, origPanX: panX, origPanY: panY };
+        window.addEventListener("pointermove", onContainerPointerMove);
+        window.addEventListener("pointerup", onContainerPointerUp);
+      }
+      function onContainerPointerMove(ev) {
+        if (!panDragRef.current) return;
+        const d = panDragRef.current;
+        setPanX(d.origPanX + (ev.clientX - d.startX));
+        setPanY(d.origPanY + (ev.clientY - d.startY));
+      }
+      function onContainerPointerUp() {
+        panDragRef.current = null;
+        window.removeEventListener("pointermove", onContainerPointerMove);
+        window.removeEventListener("pointerup", onContainerPointerUp);
+      }
+      el.addEventListener("pointerdown", onContainerPointerDown);
+      return () => {
+        el.removeEventListener("wheel", onWheel);
+        el.removeEventListener("pointerdown", onContainerPointerDown);
+      };
+    }, [panX, panY]); // include panX/panY so closures capture current values
 
     // Pin drag (adjust for zoom)
     function onPinPointerDown(e, loc) {
@@ -173,9 +199,9 @@
       // Scaled down to 80% so the tilted card fits within the container
       ...(is3d ? {
         position: "absolute", inset: 0, zIndex: 1,
-        transform: `scale(${zoom * 0.80}) perspective(1000px) rotateX(36deg)`,
+        transform: `translate(${panX}px, ${panY}px) scale(${zoom * 0.80}) perspective(1000px) rotateX(36deg)`,
         transformOrigin: "center 58%",
-        transition: "transform 0.35s ease",
+        transition: panDragRef.current ? "none" : "transform 0.35s ease",
         border: "10px solid #5c3a1e",
         borderRadius: 8,
         boxShadow: "0 -30px 80px rgba(0,0,0,0.5), 0 0 0 12px #3d2210, 0 30px 60px rgba(0,0,0,0.6)",
@@ -193,7 +219,23 @@
       // Outer container: shows "table" around the tilted map card in 3D
       React.createElement("div", { ref: mapContainerRef, style: { position: "relative", minWidth: 0, overflow: "hidden",
         background: is3d
-          ? "radial-gradient(ellipse 80% 60% at 50% 70%, #1e1008, #080504)"
+          ? [
+              // Campfire glow at centre-bottom
+              "radial-gradient(ellipse 25% 20% at 50% 92%, rgba(255,120,20,0.5), transparent 100%)",
+              // Ground — earthy forest floor
+              "radial-gradient(ellipse 100% 35% at 50% 100%, #1a1002 0%, transparent 70%)",
+              // Tree silhouettes L/R
+              "radial-gradient(ellipse 8% 70% at 4% 65%, #0a1400 0%, transparent 100%)",
+              "radial-gradient(ellipse 8% 70% at 96% 65%, #0a1400 0%, transparent 100%)",
+              "radial-gradient(ellipse 6% 55% at 12% 70%, #0c1600 0%, transparent 100%)",
+              "radial-gradient(ellipse 6% 55% at 88% 70%, #0c1600 0%, transparent 100%)",
+              "radial-gradient(ellipse 5% 45% at 20% 72%, #0e1800 0%, transparent 100%)",
+              "radial-gradient(ellipse 5% 45% at 80% 72%, #0e1800 0%, transparent 100%)",
+              // Tent / teepee glow behind map
+              "radial-gradient(ellipse 30% 50% at 50% 30%, rgba(120,80,20,0.08), transparent 80%)",
+              // Night sky gradient
+              "linear-gradient(180deg, #030608 0%, #050e08 30%, #081204 60%, #0f1a06 80%, #1a2204 100%)",
+            ].join(", ")
           : "#0c1418" } },
         // The map card — in 3D mode tilts as one unit (WorldCanvas + content together)
         React.createElement("div", { style: innerStyle },
@@ -229,14 +271,14 @@
                 // Invisible wider hit area for hovering
                 canEdit && React.createElement("polyline", { points: ptStr, fill: "none", stroke: "transparent", strokeWidth: 4, style: { cursor: "pointer" },
                   onMouseEnter: () => setHoveredPath(p.id), onMouseLeave: () => setHoveredPath(null) }),
-                // Dark outline (road edge)
-                React.createElement("polyline", { points: ptStr, fill: "none", stroke: "#1a0e04", strokeWidth: 2.2, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke",
+                // Dark outline (road edge) — thicker for visibility
+                React.createElement("polyline", { points: ptStr, fill: "none", stroke: "#160a00", strokeWidth: 3.5, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke",
                   onMouseEnter: canEdit ? () => setHoveredPath(p.id) : undefined, onMouseLeave: canEdit ? () => setHoveredPath(null) : undefined }),
                 // Light fill (road surface — earthy tan)
-                React.createElement("polyline", { points: ptStr, fill: "none", stroke: col, strokeWidth: 1.1, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" }),
-                // Delete × at midpoint (always visible)
-                canEdit && React.createElement("circle", { cx: mx, cy: my, r: 2, fill: "rgba(20,14,28,0.92)", stroke: col, strokeWidth: 0.4, style: { cursor: "pointer" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }),
-                canEdit && React.createElement("text", { x: mx, y: my + 0.35, textAnchor: "middle", dominantBaseline: "middle", fontSize: 2.6, fill: "#fff", style: { cursor: "pointer", userSelect: "none" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }, "×"),
+                React.createElement("polyline", { points: ptStr, fill: "none", stroke: col, strokeWidth: 1.8, strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" }),
+                // Delete × — ONLY when hovering this path
+                canEdit && hoveredPath === p.id && React.createElement("circle", { cx: mx, cy: my, r: 2.4, fill: "rgba(20,14,28,0.95)", stroke: col, strokeWidth: 0.5, style: { cursor: "pointer" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }),
+                canEdit && hoveredPath === p.id && React.createElement("text", { x: mx, y: my + 0.4, textAnchor: "middle", dominantBaseline: "middle", fontSize: 3.0, fill: "#fff", style: { cursor: "pointer", userSelect: "none" }, onClick: (e) => { e.stopPropagation(); deletePath(p.id); } }, "×"),
                 // Segment bend handles — ONLY when hovering this path
                 canEdit && hoveredPath === p.id && allPts.slice(0, -1).map(([ax, ay], si) => {
                   const [bx, by] = allPts[si + 1];

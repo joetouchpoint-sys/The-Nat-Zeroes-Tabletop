@@ -91,7 +91,7 @@
   }
   function roundRect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
 
-  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken, mapObjs, tool, onPlaceObject, onPlaceAoe, onSelectObject3D }) {
+  function Table3D({ map, tokens, party, bestiary, activeUid, hexMode, onMoveToken, mapObjs, aoeList, tool, onPlaceObject, onPlaceAoe, onSelectObject3D, onMoveObject3D }) {
     const mountRef = useRef(null);
     const state = useRef({});
     const onMoveRef = useRef(onMoveToken);
@@ -102,6 +102,8 @@
     useEffect(() => { onPlaceAoeRef.current = onPlaceAoe; });
     const onSelectObjRef = useRef(onSelectObject3D);
     useEffect(() => { onSelectObjRef.current = onSelectObject3D; });
+    const onMoveObj3DRef = useRef(onMoveObject3D);
+    useEffect(() => { onMoveObj3DRef.current = onMoveObject3D; });
     const toolRef = useRef(tool);
     useEffect(() => { toolRef.current = tool; });
 
@@ -129,6 +131,7 @@
       const boardGroup = new T.Group(); scene.add(boardGroup);
       const figGroup = new T.Group(); scene.add(figGroup);
       const objGroup = new T.Group(); scene.add(objGroup);
+      const aoeGroup = new T.Group(); scene.add(aoeGroup);
 
       // Orbit state
       const cam = { az: 0.6, pol: 0.88, dist: Math.max(map.cols, map.rows) * 0.95, tAz: 0.6, tPol: 0.88, tDist: Math.max(map.cols, map.rows) * 0.95, cx: 0, cz: 0 };
@@ -186,15 +189,32 @@
           }
           return;
         }
-        // Raycast against placed objects (select for 3D manipulation)
+        // Update mouseNDC for this event (needed for accurate raycasting below)
+        { const rect2 = dom.getBoundingClientRect();
+          mouseNDC.x = ((e.clientX - rect2.left) / rect2.width) * 2 - 1;
+          mouseNDC.y = -((e.clientY - rect2.top) / rect2.height) * 2 + 1; }
+
+        // Raycast against placed objects (select/move for 3D manipulation)
         const objMeshes = (state.current.objectMeshes || []).map(function(o) { return o.mesh; });
-        if (objMeshes.length > 0 && onSelectObjRef.current) {
+        if (objMeshes.length > 0) {
           raycaster.setFromCamera(mouseNDC, camera);
           const hits = raycaster.intersectObjects(objMeshes, false);
           if (hits.length > 0) {
             const hit = hits[0].object;
             const entry = (state.current.objectMeshes || []).find(function(o) { return o.mesh === hit; });
-            if (entry) { onSelectObjRef.current(entry.id); return; }
+            if (entry && onSelectObjRef.current) { onSelectObjRef.current(entry.id); return; }
+          }
+          // If an object is "selected" (tracked by ref) and we click ground → move it
+          if (state.current.selectedObj3DId && onMoveObj3DRef.current) {
+            const pt = groundPosAt(e);
+            if (pt) {
+              const W = state.current.boardW || map.cols, H = state.current.boardH || map.rows;
+              const c = Math.max(0, Math.min(W-1, Math.floor(pt.x + W/2)));
+              const r = Math.max(0, Math.min(H-1, Math.floor(pt.z + H/2)));
+              onMoveObj3DRef.current(state.current.selectedObj3DId, c, r);
+              state.current.selectedObj3DId = null;
+              return;
+            }
           }
         }
         const fig = pickFigureAt(e);
@@ -272,9 +292,9 @@
       function handleDice(e) { throwDice3D(e.detail.result, e.detail.theme); }
       window.addEventListener("nz:dice", handleDice);
 
-      state.current = { scene, renderer, camera, boardGroup, figGroup, objGroup, cam,
-        figureObjects: [], activeRing: null,
-        boardW: map.cols, boardH: map.rows,
+      state.current = { scene, renderer, camera, boardGroup, figGroup, objGroup, aoeGroup, cam,
+        figureObjects: [], activeRing: null, objectMeshes: [],
+        boardW: map.cols, boardH: map.rows, selectedObj3DId: null,
         dispose() {
           cancelAnimationFrame(raf); ro.disconnect();
           dom.removeEventListener("pointerdown", down); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); dom.removeEventListener("wheel", wheel);
@@ -337,6 +357,7 @@
     useEffect(() => { if (state.current.boardGroup) { buildBoard(); syncFigures(); syncObjects(); } }, [map.id, hexMode]);
     useEffect(() => { if (state.current.figGroup) syncFigures(); }, [tokens, activeUid]);
     useEffect(() => { if (state.current.objGroup) syncObjects(); }, [mapObjs]);
+    useEffect(() => { if (state.current.aoeGroup) syncAoe(); }, [aoeList]);
 
     function buildBoard() {
       const s = state.current; const g = s.boardGroup;
@@ -507,6 +528,40 @@
         mesh.userData.objId = obj.id; // tag for raycasting
         g.add(mesh);
         s.objectMeshes.push({ id: obj.id, mesh });
+      });
+    }
+
+    function syncAoe() {
+      const s = state.current; if (!s.aoeGroup) return;
+      const g = s.aoeGroup;
+      while (g.children.length) { const c = g.children.pop(); A.disposeObj(c); }
+      const W = map.cols, H = map.rows;
+      const templates = aoeList || [];
+      templates.forEach((aoe) => {
+        const wx = aoe.c - W / 2 + 0.5, wz = aoe.r - H / 2 + 0.5;
+        const sz = (aoe.size || 4);
+        const AOE_MATS = {
+          circle: new T.MeshBasicMaterial({ color: 0x4444ff, transparent: true, opacity: 0.28, side: T.DoubleSide }),
+          square: new T.MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.28, side: T.DoubleSide }),
+          line:   new T.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.32, side: T.DoubleSide }),
+        };
+        const mat = AOE_MATS[aoe.type] || AOE_MATS.circle;
+        let mesh;
+        if (aoe.type === "circle") {
+          mesh = new T.Mesh(new T.CylinderGeometry(sz / 2, sz / 2, 0.04, 32), mat);
+        } else if (aoe.type === "square") {
+          mesh = new T.Mesh(new T.BoxGeometry(sz, 0.04, sz), mat);
+        } else { // line
+          mesh = new T.Mesh(new T.BoxGeometry(sz, 0.04, 1), mat);
+        }
+        mesh.position.set(wx, 0.04, wz);
+        g.add(mesh);
+        // Outline ring/border
+        const outlineMat = new T.MeshBasicMaterial({ color: mat.color, transparent: true, opacity: 0.7, side: T.DoubleSide });
+        if (aoe.type === "circle") {
+          const ring = new T.Mesh(new T.TorusGeometry(sz / 2, 0.05, 8, 32), outlineMat);
+          ring.rotation.x = Math.PI / 2; ring.position.set(wx, 0.05, wz); g.add(ring);
+        }
       });
     }
 
