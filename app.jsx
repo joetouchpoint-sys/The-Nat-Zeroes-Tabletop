@@ -1,6 +1,6 @@
 /* APP SHELL — nav, routing, roles, account switching */
 (function () {
-  const { useState, useContext, useEffect } = React;
+  const { useState, useContext, useEffect, useRef } = React;
 
   function lsGet(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch(e) { return fallback; } }
   function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
