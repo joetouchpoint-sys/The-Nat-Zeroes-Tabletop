@@ -305,7 +305,7 @@
               return React.createElement("div", { key: row[0], style: { display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--hair)" } },
                 React.createElement("kbd", { style: { fontFamily: "var(--mono)", fontSize: 12, background: "var(--surface-2)", border: "1px solid var(--hair)", borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap", minWidth: 32, textAlign: "center", color: "var(--gold)" } }, row[0]),
                 React.createElement("span", { style: { fontSize: 14, color: "var(--ink-soft)" } }, row[1]));
-            }));
+            });
   }
 
   function Recaps({ recaps, setRecaps, stats }) {
