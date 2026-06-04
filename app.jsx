@@ -116,6 +116,27 @@
       try { localStorage.setItem("nz_parchment", parchment ? "1" : "0"); } catch(e) {}
     }, [parchment]);
 
+    // Shortcuts modal rendered directly to DOM (avoids React tree paren issues)
+    useEffect(() => {
+      var SHORTCUTS = [["?","Open / close this guide"],["Esc","Close any modal"],["Space","Next initiative turn"],["D","Open dice tray"],["F","Toggle fog tool"],["R","Roll all initiative"],["📜","Toggle parchment theme"],["⤢","Fullscreen mode"],["🔊","Toggle sounds"]];
+      function removeModal() { var el = document.getElementById("nz-sc-modal"); if (el) el.remove(); }
+      if (!showShortcuts) { removeModal(); return; }
+      removeModal();
+      var ov = document.createElement("div");
+      ov.id = "nz-sc-modal";
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(8,5,14,0.72);backdrop-filter:blur(4px);display:grid;place-items:center;padding:24px";
+      ov.addEventListener("click", function(e) { if (e.target === ov) setShowShortcuts(false); });
+      var pnl = document.createElement("div");
+      pnl.style.cssText = "background:var(--surface);border:1px solid var(--hair);border-radius:16px;width:480px;max-width:calc(100vw - 24px);max-height:80vh;overflow:auto;padding:24px;box-shadow:0 24px 70px rgba(0,0,0,0.6)";
+      var hdr = '<div style="display:flex;align-items:center;margin-bottom:20px"><h3 style="font-family:var(--display);font-size:18px;color:var(--gold-bright);margin:0">Keyboard Shortcuts</h3><div style="flex:1"></div><button id="nz-sc-close" style="width:28px;height:28px;background:var(--surface-2);border:1px solid var(--hair);border-radius:8px;cursor:pointer;color:var(--ink-dim)">✕</button></div>';
+      var rows = SHORTCUTS.map(function(r) { return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--hair)"><kbd style="font-family:var(--mono);font-size:12px;background:var(--surface-2);border:1px solid var(--hair);border-radius:6px;padding:3px 8px;min-width:32px;text-align:center;color:var(--gold);white-space:nowrap">' + r[0] + '</kbd><span style="font-size:14px;color:var(--ink-soft)">' + r[1] + '</span></div>'; }).join("");
+      pnl.innerHTML = hdr + rows;
+      ov.appendChild(pnl);
+      document.body.appendChild(ov);
+      document.getElementById("nz-sc-close").addEventListener("click", function() { setShowShortcuts(false); });
+      return removeModal;
+    }, [showShortcuts]);
+
     // Global keyboard shortcut: ? = open shortcut cheat-sheet
     useEffect(() => {
       function onKey(e) {
@@ -214,23 +235,6 @@
     const roleInfo = Auth.ROLES[role];
     const ctxVal = { user, role, can: (c) => Auth.can(role, c) };
 
-    // Precompute shortcut rows to avoid nested .map() inside React.createElement
-    const shortcutRows = [
-      ["?",    "Open / close this shortcut guide"],
-      ["Esc",  "Close any modal or overlay"],
-      ["Space","Next initiative turn (battle map)"],
-      ["D",    "Open dice tray (battle map)"],
-      ["F",    "Toggle fog brush (battle map)"],
-      ["R",    "Roll initiative for all tokens"],
-      ["📜",   "Toggle parchment light theme"],
-      ["⤢",   "Fullscreen mode (great for TV)"],
-      ["🔊",   "Toggle sound effects"],
-    ].map(function(r) {
-      return React.createElement("div", { key: r[0], style: { display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--hair)" } },
-        React.createElement("kbd", { style: { fontFamily: "var(--mono)", fontSize: 12, background: "var(--surface-2)", border: "1px solid var(--hair)", borderRadius: 6, padding: "3px 8px", minWidth: 32, textAlign: "center", color: "var(--gold)", whiteSpace: "nowrap" } }, r[0]),
-        React.createElement("span", { style: { fontSize: 14, color: "var(--ink-soft)" } }, r[1]));
-    });
-
     return React.createElement(Auth.RoleContext.Provider, { value: ctxVal },
       React.createElement("div", { className: "app" + (collapsed ? " rail-collapsed" : "") },
         // ===== rail =====
@@ -300,17 +304,7 @@
             view === "accounts" && React.createElement(Auth.AccountsView)))),
 
         React.createElement(Auth.AccountSwitcher, { open: switchOpen, onClose: () => setSwitchOpen(false), current: user, onSwitch: setUser }),
-        window.NZTweaks && React.createElement(window.NZTweaks),
-        // Keyboard shortcut cheat-sheet modal (uses precomputed shortcutRows)
-        showShortcuts && React.createElement("div", {
-          onClick: () => setShowShortcuts(false),
-          style: { position: "fixed", inset: 0, zIndex: 200, background: "rgba(8,5,14,0.7)", backdropFilter: "blur(4px)", display: "grid", placeItems: "center", padding: 24 } },
-          React.createElement("div", { onClick: (e) => e.stopPropagation(), className: "panel", style: { width: 480, maxWidth: "100%", maxHeight: "80vh", overflow: "auto", padding: 24 } },
-            React.createElement("div", { style: { display: "flex", alignItems: "center", marginBottom: 20 } },
-              React.createElement("h3", { style: { fontFamily: "var(--display)", fontSize: 18, color: "var(--gold-bright)" } }, "Keyboard Shortcuts"),
-              React.createElement("div", { style: { flex: 1 } }),
-              React.createElement("button", { className: "icon-btn", onClick: () => setShowShortcuts(false), style: { width: 28, height: 28 } }, "✕")),
-            shortcutRows));
+        window.NZTweaks && React.createElement(window.NZTweaks)));
   }
 
   function Recaps({ recaps, setRecaps, stats }) {
